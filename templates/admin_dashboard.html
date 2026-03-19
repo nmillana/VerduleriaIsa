@@ -1,0 +1,95 @@
+﻿{% extends "base.html" %}
+{% block content %}
+<section class="section-head">
+    <div>
+        <p class="eyebrow">Administración</p>
+        <h1>Panel mensual</h1>
+        <p class="muted">Mes analizado: {{ month }}</p>
+    </div>
+    <form method="get" action="/admin/dashboard" class="month-filter">
+        <input type="month" name="month" value="{{ month }}">
+        <button class="button ghost" type="submit">Actualizar</button>
+    </form>
+</section>
+
+<section class="grid three-up">
+    <article class="stat-card">
+        <span class="stat-value">{{ dashboard.summary.revenue|currency }}</span>
+        <span class="stat-label">ingresos del mes</span>
+    </article>
+    <article class="stat-card">
+        <span class="stat-value">{{ dashboard.summary.order_count }}</span>
+        <span class="stat-label">pedidos del mes</span>
+    </article>
+    <article class="stat-card">
+        <span class="stat-value">{{ dashboard.summary.client_count }}</span>
+        <span class="stat-label">clientas con pedidos</span>
+    </article>
+</section>
+
+<section class="grid two-up">
+    <article class="panel">
+        <h2>Top 5 más solicitados</h2>
+        {% if dashboard.top_products %}
+            <table class="data-table compact">
+                <thead><tr><th>Producto</th><th>Solicitudes</th><th>Cantidad</th></tr></thead>
+                <tbody>
+                    {% for item in dashboard.top_products %}
+                        <tr>
+                            <td>{{ item.product_name }}</td>
+                            <td>{{ item.request_count }}</td>
+                            <td>{{ item.total_quantity|qty }}</td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        {% else %}
+            <p class="muted">Todavía no hay pedidos este mes.</p>
+        {% endif %}
+    </article>
+    <article class="panel">
+        <h2>Top 5 menos solicitados</h2>
+        {% if dashboard.low_products %}
+            <table class="data-table compact">
+                <thead><tr><th>Producto</th><th>Solicitudes</th><th>Cantidad</th></tr></thead>
+                <tbody>
+                    {% for item in dashboard.low_products %}
+                        <tr>
+                            <td>{{ item.product_name }}</td>
+                            <td>{{ item.request_count }}</td>
+                            <td>{{ item.total_quantity|qty }}</td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        {% else %}
+            <p class="muted">Todavía no hay pedidos este mes.</p>
+        {% endif %}
+    </article>
+</section>
+
+<section class="panel">
+    <div class="section-head small-gap">
+        <h2>Pedidos recientes</h2>
+        <a class="button ghost" href="/admin/pedidos?month={{ month }}">Ver todos</a>
+    </div>
+    <table class="data-table">
+        <thead>
+            <tr><th>Pedido</th><th>Clienta</th><th>Estado</th><th>Total</th><th></th></tr>
+        </thead>
+        <tbody>
+            {% for order in recent_orders %}
+                <tr>
+                    <td>#{{ order.id }}</td>
+                    <td>{{ order.client_name }}</td>
+                    <td>{{ order.status|status_label }}</td>
+                    <td>{{ (order.actual_total or order.estimated_total)|currency }}</td>
+                    <td><a href="/admin/pedido/{{ order.id }}">Abrir</a></td>
+                </tr>
+            {% else %}
+                <tr><td colspan="5">Sin pedidos en este mes.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</section>
+{% endblock %}

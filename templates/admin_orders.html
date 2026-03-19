@@ -1,0 +1,41 @@
+﻿{% extends "base.html" %}
+{% block content %}
+<section class="section-head">
+    <div>
+        <p class="eyebrow">Seguimiento</p>
+        <h1>Pedidos</h1>
+    </div>
+    <form method="get" action="/admin/pedidos" class="inline-form compact-form">
+        <input type="month" name="month" value="{{ month }}">
+        <select name="status">
+            <option value="" {% if not status %}selected{% endif %}>Todos los estados</option>
+            <option value="pendiente" {% if status == 'pendiente' %}selected{% endif %}>Pendiente</option>
+            <option value="comprado" {% if status == 'comprado' %}selected{% endif %}>Comprado</option>
+        </select>
+        <button class="button ghost" type="submit">Filtrar</button>
+    </form>
+</section>
+
+<section class="panel">
+    <table class="data-table">
+        <thead>
+            <tr><th>Pedido</th><th>Clienta</th><th>Correo</th><th>Estado</th><th>Total</th><th>Fecha</th><th></th></tr>
+        </thead>
+        <tbody>
+            {% for order in orders %}
+                <tr>
+                    <td>#{{ order.id }}</td>
+                    <td>{{ order.client_name }}</td>
+                    <td>{{ order.client_email }}</td>
+                    <td>{{ order.status|status_label }}</td>
+                    <td>{{ (order.actual_total or order.estimated_total)|currency }}</td>
+                    <td>{{ order.created_at }}</td>
+                    <td><a href="/admin/pedido/{{ order.id }}">Abrir</a></td>
+                </tr>
+            {% else %}
+                <tr><td colspan="7">No hay pedidos para este filtro.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</section>
+{% endblock %}

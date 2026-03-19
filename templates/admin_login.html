@@ -1,0 +1,17 @@
+﻿{% extends "base.html" %}
+{% block content %}
+<section class="form-panel narrow">
+    <h1>Ingreso administrador</h1>
+    <p class="muted">Acceso protegido para ver datos, pedidos, productos e ingresos.</p>
+    {% if error %}<div class="error-box"><p>{{ error }}</p></div>{% endif %}
+    <form method="post" class="stacked-form">
+        <label>Correo
+            <input type="email" name="email" value="{{ email or '' }}" required>
+        </label>
+        <label>Contraseña
+            <input type="password" name="password" required>
+        </label>
+        <button class="button primary" type="submit">Ingresar</button>
+    </form>
+</section>
+{% endblock %}

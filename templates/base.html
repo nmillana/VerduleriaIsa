@@ -1,0 +1,45 @@
+﻿<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{{ title }}</title>
+    <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+    <div class="page-shell">
+        <header class="topbar">
+            <a class="brand" href="/">
+                <span class="brand-label">Verduleria</span>
+                <span class="brand-script">Isa</span>
+                <span class="brand-tagline">Tu feria personal</span>
+            </a>
+            <nav class="nav-links">
+                {% if session and session.role == 'client' %}
+                    <a href="/cliente/dashboard">Mi panel</a>
+                    <a href="/cliente/pedido/nuevo">Nuevo pedido</a>
+                    <a href="/logout">Salir</a>
+                {% elif session and session.role == 'admin' %}
+                    <a href="/admin/dashboard">Panel</a>
+                    <a href="/admin/pedidos">Pedidos</a>
+                    <a href="/admin/productos">Productos</a>
+                    <a href="/admin/clientes">Clientas</a>
+                    <a href="/logout">Salir</a>
+                {% else %}
+                    <a href="/login-cliente">Ingreso clienta</a>
+                    <a href="/registro">Registro</a>
+                    <a href="/admin/login">Administrador</a>
+                {% endif %}
+            </nav>
+        </header>
+
+        <main class="content-shell">
+            {% if notice %}
+                <div class="notice-banner">{{ notice }}</div>
+            {% endif %}
+            {% block content %}{% endblock %}
+        </main>
+    </div>
+    <script src="/static/app.js"></script>
+</body>
+</html>

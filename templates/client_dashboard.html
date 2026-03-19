@@ -1,0 +1,74 @@
+﻿{% extends "base.html" %}
+{% block content %}
+<section class="section-head">
+    <div>
+        <p class="eyebrow">Panel clienta</p>
+        <h1>{{ client.name }}</h1>
+        <p class="muted">Correo: {{ client.email }} | Dirección: {{ client.address }}</p>
+    </div>
+    <div class="hero-actions">
+        <form method="get" action="/cliente/dashboard" class="month-filter">
+            <input type="month" name="month" value="{{ month }}">
+            <button class="button ghost" type="submit">Ver mes</button>
+        </form>
+        <a class="button primary" href="/cliente/pedido/nuevo">Hacer pedido</a>
+    </div>
+</section>
+
+<section class="grid three-up">
+    <article class="stat-card">
+        <span class="stat-value">{{ dashboard.summary.monthly_total|currency }}</span>
+        <span class="stat-label">gasto del mes</span>
+    </article>
+    <article class="stat-card">
+        <span class="stat-value">{{ dashboard.summary.order_count }}</span>
+        <span class="stat-label">pedidos del mes</span>
+    </article>
+    <article class="stat-card">
+        <span class="stat-value">{{ dashboard.summary.average_ticket|currency }}</span>
+        <span class="stat-label">ticket promedio</span>
+    </article>
+</section>
+
+<section class="panel">
+    <h2>Desglose semanal</h2>
+    {% if dashboard.weeks %}
+        {% for week in dashboard.weeks %}
+            <details class="week-card" {% if loop.first %}open{% endif %}>
+                <summary>
+                    <div>
+                        <strong>{{ week.label }}</strong>
+                        <span>{{ week.orders|length }} pedido(s)</span>
+                    </div>
+                    <strong>{{ week.total|currency }}</strong>
+                </summary>
+                <div class="details-stack">
+                    {% for order in week.orders %}
+                        <article class="order-card">
+                            <div class="order-card__top">
+                                <div>
+                                    <h3>Pedido #{{ order.id }}</h3>
+                                    <p class="muted">{{ order.created_at }} | {{ order.status|status_label }}</p>
+                                </div>
+                                <div class="hero-actions">
+                                    <a class="button ghost" href="/cliente/pedido/{{ order.id }}">Ver detalle</a>
+                                    <a class="button ghost" href="/cliente/pedido/nuevo?source={{ order.id }}">Repetir pedido</a>
+                                </div>
+                            </div>
+                            <ul class="simple-list">
+                                {% for item in order['items'] %}
+                                    <li>{{ item.product_name }} x {{ item.quantity|qty }}</li>
+                                {% endfor %}
+                            </ul>
+                            <p class="order-total">Total: {{ order.display_total|currency }}</p>
+                        </article>
+                    {% endfor %}
+                </div>
+            </details>
+        {% endfor %}
+    {% else %}
+        <p class="muted">Todavía no hay pedidos en este mes.</p>
+    {% endif %}
+</section>
+{% endblock %}
+

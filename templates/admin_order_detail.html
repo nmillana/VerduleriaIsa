@@ -1,0 +1,75 @@
+﻿{% extends "base.html" %}
+{% block content %}
+<section class="section-head">
+    <div>
+        <p class="eyebrow">Ajuste de compra</p>
+        <h1>Pedido #{{ order.id }}</h1>
+        <p class="muted">{{ order.client_name }} | {{ order.client_email }} | {{ order.client_phone }}</p>
+    </div>
+    <a class="button ghost" href="/admin/pedidos">Volver</a>
+</section>
+
+<section class="grid two-up compact-grid">
+    <article class="panel">
+        <h2>Datos de entrega</h2>
+        <p>{{ order.client_address }}</p>
+        <p class="muted">Creado: {{ order.created_at }}</p>
+    </article>
+    <article class="panel">
+        <h2>Totales</h2>
+        <p>Estimado: <strong>{{ order.estimated_total|currency }}</strong></p>
+        <p>Actual/proyectado: <strong>{{ (order.actual_total or order.estimated_total)|currency }}</strong></p>
+        <p>Estado actual: <strong>{{ order.status|status_label }}</strong></p>
+    </article>
+</section>
+
+<form method="post" class="panel stacked-form">
+    <label>Estado del pedido
+        <select name="status">
+            <option value="pendiente" {% if order.status == 'pendiente' %}selected{% endif %}>Pendiente</option>
+            <option value="comprado" {% if order.status == 'comprado' %}selected{% endif %}>Comprado</option>
+        </select>
+    </label>
+
+    <label>Nota general
+        <textarea name="admin_note" rows="3">{{ order.admin_note or '' }}</textarea>
+    </label>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Producto</th>
+                <th>Cantidad</th>
+                <th>Precio estimado</th>
+                <th>Precio real unitario</th>
+                <th>Faltó</th>
+                <th>Nota</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for item in order['items'] %}
+                <tr>
+                    <td>{{ item.product_name }}</td>
+                    <td>{{ item.quantity|qty }}</td>
+                    <td>{{ item.estimated_price|currency }}</td>
+                    <td>
+                        <input type="number" min="0" name="actual_{{ item.id }}" value="{{ item.actual_price if item.actual_price is not none else '' }}">
+                    </td>
+                    <td>
+                        <label class="checkbox-inline">
+                            <input type="checkbox" name="missing_{{ item.id }}" value="1" {% if item.was_missing %}checked{% endif %}>
+                            sí
+                        </label>
+                    </td>
+                    <td>
+                        <input type="text" name="note_{{ item.id }}" value="{{ item.item_note or '' }}" placeholder="Ej. no había, se reemplazó, subió precio">
+                    </td>
+                </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+    <button class="button primary" type="submit">Guardar ajuste real</button>
+</form>
+{% endblock %}
+

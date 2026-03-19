@@ -1,0 +1,63 @@
+﻿{% extends "base.html" %}
+{% block content %}
+<section class="section-head">
+    <div>
+        <p class="eyebrow">Pedido semanal</p>
+        <h1>Arma tu pedido</h1>
+        <p class="muted">Puedes escribir cantidades por producto. El total es estimado y luego se ajusta con el precio real de compra.</p>
+    </div>
+    {% if source_order %}
+        <div class="badge-block">Basado en el pedido #{{ source_order.id }} del {{ source_order.created_at }}</div>
+    {% endif %}
+</section>
+
+{% if error %}<div class="error-box"><p>{{ error }}</p></div>{% endif %}
+
+<form method="post" action="/cliente/pedido/guardar" class="order-layout" data-order-form>
+    <input type="hidden" name="source_order_id" value="{{ source_order.id if source_order else '' }}">
+    <aside class="panel summary-panel">
+        <h2>Resumen</h2>
+        <label>Buscar producto
+            <input type="search" data-product-search placeholder="Ej. tomate, palta, huevo">
+        </label>
+        <div class="summary-stats">
+            <div>
+                <span class="muted">Productos elegidos</span>
+                <strong data-selected-count>0</strong>
+            </div>
+            <div>
+                <span class="muted">Total estimado</span>
+                <strong data-estimated-total>$0</strong>
+            </div>
+        </div>
+        <button class="button primary full-width" type="submit">Guardar pedido</button>
+    </aside>
+
+    <section class="product-columns">
+        {% for category, items in products.items() %}
+            <div class="panel">
+                <h2>{{ category|title }}</h2>
+                <div class="product-table">
+                    {% for product in items %}
+                        <label class="product-row" data-product-name="{{ product.name|lower }}">
+                            <div>
+                                <strong>{{ product.name }}</strong>
+                                <span class="muted">{{ product.estimated_price|currency }}</span>
+                            </div>
+                            <input
+                                type="number"
+                                step="0.25"
+                                min="0"
+                                name="qty_{{ product.id }}"
+                                value="{{ quantities.get(product.id, '') }}"
+                                data-price="{{ product.estimated_price }}"
+                                data-quantity-input
+                            >
+                        </label>
+                    {% endfor %}
+                </div>
+            </div>
+        {% endfor %}
+    </section>
+</form>
+{% endblock %}

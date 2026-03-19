@@ -1,0 +1,58 @@
+﻿{% extends "base.html" %}
+{% block content %}
+<section class="section-head">
+    <div>
+        <p class="eyebrow">Detalle</p>
+        <h1>Pedido #{{ order.id }}</h1>
+        <p class="muted">{{ order.created_at }} | Estado: {{ order.status|status_label }}</p>
+    </div>
+    <div class="hero-actions">
+        <a class="button ghost" href="/cliente/pedido/nuevo?source={{ order.id }}">Repetir pedido</a>
+        <a class="button ghost" href="/cliente/dashboard">Volver al panel</a>
+    </div>
+</section>
+
+<section class="panel">
+    <div class="grid three-up">
+        <article class="stat-card">
+            <span class="stat-value">{{ order.estimated_total|currency }}</span>
+            <span class="stat-label">total estimado</span>
+        </article>
+        <article class="stat-card">
+            <span class="stat-value">{{ (order.actual_total or order.estimated_total)|currency }}</span>
+            <span class="stat-label">total final o proyectado</span>
+        </article>
+        <article class="stat-card">
+            <span class="stat-value">{{ order['items']|length }}</span>
+            <span class="stat-label">productos en el pedido</span>
+        </article>
+    </div>
+</section>
+
+<section class="panel">
+    <h2>Productos</h2>
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Producto</th>
+                <th>Cantidad</th>
+                <th>Precio estimado</th>
+                <th>Precio real</th>
+                <th>Nota</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for item in order['items'] %}
+                <tr>
+                    <td>{{ item.product_name }}</td>
+                    <td>{{ item.quantity|qty }}</td>
+                    <td>{{ item.estimated_total|currency }}</td>
+                    <td>{{ item.actual_total|currency if item.actual_total is not none else '-' }}</td>
+                    <td>{{ item.item_note or '-' }}</td>
+                </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</section>
+{% endblock %}
+

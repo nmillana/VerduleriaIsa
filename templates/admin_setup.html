@@ -1,0 +1,27 @@
+﻿{% extends "base.html" %}
+{% block content %}
+<section class="form-panel narrow">
+    <h1>Configurar administradora</h1>
+    <p class="muted">Este acceso sí lleva contraseña para resguardar los datos de tus clientas.</p>
+    {% if errors %}
+        <div class="error-box">
+            {% for error in errors %}<p>{{ error }}</p>{% endfor %}
+        </div>
+    {% endif %}
+    <form method="post" class="stacked-form">
+        <label>Nombre
+            <input type="text" name="name" value="{{ values.name or '' }}" required>
+        </label>
+        <label>Correo
+            <input type="email" name="email" value="{{ values.email or '' }}" required>
+        </label>
+        <label>Contraseña
+            <input type="password" name="password" required>
+        </label>
+        <label>Confirmar contraseña
+            <input type="password" name="confirm_password" required>
+        </label>
+        <button class="button primary" type="submit">Crear acceso administrador</button>
+    </form>
+</section>
+{% endblock %}

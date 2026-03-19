@@ -1,0 +1,59 @@
+﻿{% extends "base.html" %}
+{% block content %}
+<section class="section-head">
+    <div>
+        <p class="eyebrow">Catálogo</p>
+        <h1>Productos y precios</h1>
+    </div>
+</section>
+
+{% if error %}<div class="error-box"><p>{{ error }}</p></div>{% endif %}
+
+<section class="panel">
+    <h2>Agregar nuevo producto</h2>
+    <form method="post" class="inline-form grid-form">
+        <input type="hidden" name="product_id" value="">
+        <label>Nombre
+            <input type="text" name="name" required>
+        </label>
+        <label>Categoría
+            <select name="category">
+                <option value="frutas">Frutas</option>
+                <option value="verduras">Verduras y otros</option>
+            </select>
+        </label>
+        <label>Precio estimado
+            <input type="number" name="estimated_price" min="0" required>
+        </label>
+        <label>Activo
+            <select name="is_active">
+                <option value="1">Sí</option>
+                <option value="0">No</option>
+            </select>
+        </label>
+        <button class="button primary" type="submit">Guardar producto</button>
+    </form>
+</section>
+
+<section class="panel">
+    <h2>Editar productos actuales</h2>
+    <div class="table-stack">
+        {% for product in products %}
+            <form method="post" class="table-form-row">
+                <input type="hidden" name="product_id" value="{{ product.id }}">
+                <input type="text" name="name" value="{{ product.name }}" required>
+                <select name="category">
+                    <option value="frutas" {% if product.category == 'frutas' %}selected{% endif %}>Frutas</option>
+                    <option value="verduras" {% if product.category == 'verduras' %}selected{% endif %}>Verduras y otros</option>
+                </select>
+                <input type="number" name="estimated_price" min="0" value="{{ product.estimated_price }}" required>
+                <select name="is_active">
+                    <option value="1" {% if product.is_active %}selected{% endif %}>Activo</option>
+                    <option value="0" {% if not product.is_active %}selected{% endif %}>Inactivo</option>
+                </select>
+                <button class="button ghost" type="submit">Guardar</button>
+            </form>
+        {% endfor %}
+    </div>
+</section>
+{% endblock %}

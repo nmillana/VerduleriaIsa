@@ -1,0 +1,30 @@
+﻿{% extends "base.html" %}
+{% block content %}
+<section class="section-head">
+    <div>
+        <p class="eyebrow">Base de clientas</p>
+        <h1>Clientas registradas</h1>
+    </div>
+</section>
+
+<section class="panel">
+    <table class="data-table">
+        <thead>
+            <tr><th>Nombre</th><th>Correo</th><th>Teléfono</th><th>Dirección</th><th>Pedidos</th></tr>
+        </thead>
+        <tbody>
+            {% for client in clients %}
+                <tr>
+                    <td>{{ client.name }}</td>
+                    <td>{{ client.email }}</td>
+                    <td>{{ client.phone }}</td>
+                    <td>{{ client.address }}</td>
+                    <td>{{ client.order_count }}</td>
+                </tr>
+            {% else %}
+                <tr><td colspan="5">Aún no hay clientas registradas.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</section>
+{% endblock %}

@@ -1,0 +1,15 @@
+﻿{% extends "base.html" %}
+{% block content %}
+<section class="form-panel narrow">
+    <h1>Ingreso de clienta</h1>
+    <p class="muted">Ingresa tu correo como llave de acceso. Si no lo reconocemos, te avisaremos que revises el correo o que necesitas registrarte.</p>
+    {% if error %}<div class="error-box"><p>{{ error }}</p></div>{% endif %}
+    <form method="post" class="stacked-form">
+        <label>Correo
+            <input type="email" name="email" value="{{ email or '' }}" required>
+        </label>
+        <button class="button primary" type="submit">Entrar</button>
+    </form>
+    <p class="muted">¿Aún no estás registrada? <a href="/registro">Crear registro</a></p>
+</section>
+{% endblock %}

@@ -1,0 +1,8 @@
+﻿__pycache__/
+*.pyc
+.env
+.env.*
+!.env.example
+!supabase/.env.example
+data/*.sqlite3
+data/*.secret
