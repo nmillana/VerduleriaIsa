@@ -1,50 +1,55 @@
 ﻿{% extends "base.html" %}
 {% block content %}
 <section class="hero hero-grid">
-    <div>
+    <div class="hero-copy">
         <p class="eyebrow">Verduleria Isa</p>
-        <h1>Tu feria personal para tomar pedidos semanales con más orden y cercanía.</h1>
-        <p class="lead">Las clientas pueden registrarse, entrar con su correo, repetir pedidos anteriores y ver su gasto mensual. Como administradora puedes actualizar productos, cambiar precios estimados por reales y dejar notas cuando algo no estaba disponible.</p>
+        <h1>Pedidos semanales simples, claros y fáciles de seguir.</h1>
+        <p class="lead">Organiza a tus clientas, repite pedidos anteriores y ajusta precios reales sin depender de planillas largas ni pantallas recargadas.</p>
         <div class="hero-actions">
             <a class="button primary" href="/registro">Registrar clienta</a>
             <a class="button ghost" href="/login-cliente">Entrar como clienta</a>
             <a class="button ghost" href="/admin/login">Entrar como administradora</a>
         </div>
+        <div class="hero-points">
+            <span>Historial por clienta</span>
+            <span>Pedido semanal editable</span>
+            <span>Resumen mensual</span>
+        </div>
     </div>
     <div class="hero-card">
-        <p class="eyebrow">Datos protegidos</p>
-        <h2>Dónde quedan guardados los datos</h2>
-        <p>La app usa una base local <strong>SQLite</strong>. Queda en:</p>
+        <p class="eyebrow">Datos</p>
+        <h2>Información centralizada</h2>
+        <p>La app guarda clientas, pedidos, historial y precios en:</p>
         <code>{{ db_path }}</code>
-        <p>Ahí se almacenan clientas, pedidos, historial de compras, precios estimados y precios reales.</p>
+        <p>Desde aquí puedes administrar catálogo, compras reales y seguimiento semanal en un solo lugar.</p>
     </div>
 </section>
 
 <section class="grid three-up">
     <article class="stat-card">
         <span class="stat-value">{{ product_count }}</span>
-        <span class="stat-label">productos activos cargados desde tu Excel</span>
+        <span class="stat-label">productos activos en catálogo</span>
     </article>
     <article class="stat-card">
         <span class="stat-value">{{ client_count }}</span>
-        <span class="stat-label">clientas registradas hasta ahora</span>
+        <span class="stat-label">clientas registradas</span>
     </article>
     <article class="stat-card">
         <span class="stat-value">1</span>
-        <span class="stat-label">archivo de base de datos que puedes respaldar</span>
+        <span class="stat-label">flujo simple para administrar pedidos</span>
     </article>
 </section>
 
 <section class="panel">
-    <h2>Flujo recomendado</h2>
+    <h2>Cómo se usa</h2>
     <div class="grid two-up compact-grid">
         <div>
             <h3>Clientas</h3>
-            <p>Se registran con nombre, correo, teléfono y dirección. Luego ingresan solo con su correo para hacer el pedido, repetir uno anterior y revisar su historial.</p>
+            <p>Se registran con nombre, correo, teléfono y dirección. Luego ingresan para hacer el pedido, repetir uno anterior y revisar su historial.</p>
         </div>
         <div>
             <h3>Administración</h3>
-            <p>Configuras tu cuenta la primera vez. Desde ahí ves ingresos mensuales, top 5 de productos, pedidos pendientes y cambios de precios reales.</p>
+            <p>Configuras tu cuenta una vez y desde ahí ves ingresos mensuales, pedidos pendientes, productos más pedidos y cambios de precios reales.</p>
         </div>
     </div>
 </section>
