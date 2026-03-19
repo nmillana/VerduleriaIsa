@@ -17,8 +17,9 @@
     </article>
     <article class="panel">
         <h2>Totales</h2>
-        <p>Estimado: <strong>{{ order.estimated_total|currency }}</strong></p>
-        <p>Actual/proyectado: <strong>{{ (order.actual_total or order.estimated_total)|currency }}</strong></p>
+        <p>Subtotal productos: <strong>{{ order.subtotal_estimated|currency }}</strong></p>
+        <p>Despacho: <strong>{{ order.delivery_fee|currency }}</strong></p>
+        <p>Actual/proyectado: <strong>{{ order.display_total|currency }}</strong></p>
         <p>Estado actual: <strong>{{ order.status|status_label }}</strong></p>
     </article>
 </section>
@@ -72,4 +73,3 @@
     <button class="button primary" type="submit">Guardar ajuste real</button>
 </form>
 {% endblock %}
-

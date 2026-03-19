@@ -28,7 +28,7 @@
                     <td>{{ order.client_name }}</td>
                     <td>{{ order.client_email }}</td>
                     <td>{{ order.status|status_label }}</td>
-                    <td>{{ (order.actual_total or order.estimated_total)|currency }}</td>
+                    <td>{{ order.display_total|currency }}</td>
                     <td>{{ order.created_at }}</td>
                     <td><a href="/admin/pedido/{{ order.id }}">Abrir</a></td>
                 </tr>

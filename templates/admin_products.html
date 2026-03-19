@@ -18,8 +18,9 @@
         </label>
         <label>Categoría
             <select name="category">
-                <option value="frutas">Frutas</option>
-                <option value="verduras">Verduras y otros</option>
+                {% for value, label in category_choices %}
+                    <option value="{{ value }}">{{ label }}</option>
+                {% endfor %}
             </select>
         </label>
         <label>Precio estimado
@@ -43,8 +44,9 @@
                 <input type="hidden" name="product_id" value="{{ product.id }}">
                 <input type="text" name="name" value="{{ product.name }}" required>
                 <select name="category">
-                    <option value="frutas" {% if product.category == 'frutas' %}selected{% endif %}>Frutas</option>
-                    <option value="verduras" {% if product.category == 'verduras' %}selected{% endif %}>Verduras y otros</option>
+                    {% for value, label in category_choices %}
+                        <option value="{{ value }}" {% if product.category == value %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
                 </select>
                 <input type="number" name="estimated_price" min="0" value="{{ product.estimated_price }}" required>
                 <select name="is_active">

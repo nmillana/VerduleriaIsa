@@ -4,7 +4,7 @@
     <div>
         <p class="eyebrow">Pedido semanal</p>
         <h1>Arma tu pedido</h1>
-        <p class="muted">Puedes escribir cantidades por producto. El total es estimado y luego se ajusta con el precio real de compra.</p>
+        <p class="muted">Puedes escribir cantidades por producto. El total considera un despacho fijo de {{ delivery_fee|currency }}.</p>
     </div>
     {% if source_order %}
         <div class="badge-block">Basado en el pedido #{{ source_order.id }} del {{ source_order.created_at }}</div>
@@ -13,7 +13,7 @@
 
 {% if error %}<div class="error-box"><p>{{ error }}</p></div>{% endif %}
 
-<form method="post" action="/cliente/pedido/guardar" class="order-layout" data-order-form>
+<form method="post" action="/cliente/pedido/guardar" class="order-layout" data-order-form data-delivery-fee="{{ delivery_fee }}">
     <input type="hidden" name="source_order_id" value="{{ source_order.id if source_order else '' }}">
     <aside class="panel summary-panel">
         <h2>Resumen</h2>
@@ -26,8 +26,16 @@
                 <strong data-selected-count>0</strong>
             </div>
             <div>
+                <span class="muted">Subtotal productos</span>
+                <strong data-subtotal-estimated>$0</strong>
+            </div>
+            <div>
+                <span class="muted">Despacho fijo</span>
+                <strong>{{ delivery_fee|currency }}</strong>
+            </div>
+            <div>
                 <span class="muted">Total estimado</span>
-                <strong data-estimated-total>$0</strong>
+                <strong data-estimated-total>{{ delivery_fee|currency }}</strong>
             </div>
         </div>
         <button class="button primary full-width" type="submit">Guardar pedido</button>
@@ -36,7 +44,7 @@
     <section class="product-columns">
         {% for category, items in products.items() %}
             <div class="panel">
-                <h2>{{ category|title }}</h2>
+                <h2>{{ category|category_label }}</h2>
                 <div class="product-table">
                     {% for product in items %}
                         <label class="product-row" data-product-name="{{ product.name|lower }}">

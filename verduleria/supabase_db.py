@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import json
 from collections import Counter, OrderedDict
@@ -6,6 +6,8 @@ from datetime import datetime, timedelta, timezone
 from urllib.error import HTTPError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
+
+from verduleria.catalog_meta import DELIVERY_FEE, category_sort_key, display_category_for, normalize_name
 
 
 class SupabaseError(RuntimeError):
@@ -30,12 +32,24 @@ class SupabaseDatabase:
 
     def sync_catalog(self, products: list[dict], deactivate_missing: bool = False) -> dict:
         incoming = [self._product_payload(item) for item in products]
-        self._insert(
-            "products",
-            incoming,
-            prefer="resolution=merge-duplicates,return=representation",
-            on_conflict="name",
-        )
+        try:
+            self._insert(
+                "products",
+                incoming,
+                prefer="resolution=merge-duplicates,return=representation",
+                on_conflict="name",
+            )
+        except SupabaseError as exc:
+            if self._is_category_constraint_error(exc):
+                incoming = [self._product_payload(item, legacy_category=True) for item in products]
+                self._insert(
+                    "products",
+                    incoming,
+                    prefer="resolution=merge-duplicates,return=representation",
+                    on_conflict="name",
+                )
+            else:
+                raise
         deactivated = 0
         if deactivate_missing and incoming:
             names = {item["name"] for item in incoming}
@@ -112,8 +126,9 @@ class SupabaseDatabase:
         filters = []
         if active_only:
             filters.append(("is_active", "eq.true"))
-        rows = self._select("products", filters=filters, order="category.asc,name.asc")
-        return [self._normalize_product(row) for row in rows]
+        rows = [self._normalize_product(row) for row in self._select("products", filters=filters, order="name.asc")]
+        rows.sort(key=lambda item: (category_sort_key(item["category"]), item["name"].lower()))
+        return rows
 
     def grouped_products(self, active_only: bool = True) -> OrderedDict[str, list[dict]]:
         groups: OrderedDict[str, list[dict]] = OrderedDict()
@@ -129,16 +144,35 @@ class SupabaseDatabase:
         estimated_price: int,
         is_active: bool,
     ) -> None:
-        payload = {
-            "name": name.strip(),
-            "category": category.strip().lower(),
-            "estimated_price": int(estimated_price),
-            "is_active": bool(is_active),
-        }
-        if product_id:
-            self._update("products", [("id", f"eq.{product_id}")], payload)
-        else:
-            self._insert_one("products", payload)
+        payload = self._product_payload(
+            {
+                "name": name,
+                "category": category,
+                "estimated_price": estimated_price,
+            }
+        )
+        payload["is_active"] = bool(is_active)
+        try:
+            if product_id:
+                self._update("products", [("id", f"eq.{product_id}")], payload)
+            else:
+                self._insert_one("products", payload)
+        except SupabaseError as exc:
+            if not self._is_category_constraint_error(exc):
+                raise
+            payload = self._product_payload(
+                {
+                    "name": name,
+                    "category": category,
+                    "estimated_price": estimated_price,
+                },
+                legacy_category=True,
+            )
+            payload["is_active"] = bool(is_active)
+            if product_id:
+                self._update("products", [("id", f"eq.{product_id}")], payload)
+            else:
+                self._insert_one("products", payload)
 
     def create_order(
         self,
@@ -229,7 +263,6 @@ class SupabaseDatabase:
         items_by_order = self._fetch_order_items([order["id"] for order in orders])
         for order in orders:
             order["items"] = items_by_order.get(order["id"], [])
-            order["display_total"] = order["actual_total"] or order["estimated_total"]
         return orders
 
     def client_dashboard(self, client_id: int, month: str) -> dict:
@@ -323,7 +356,7 @@ class SupabaseDatabase:
         summary = {
             "order_count": len(orders),
             "client_count": len({int(order["client_id"]) for order in orders}),
-            "revenue": sum(int(order["actual_total"] or order["estimated_total"]) for order in orders),
+            "revenue": sum(int(order["display_total"]) for order in orders),
         }
         grouped: dict[str, dict] = {}
         for item in items:
@@ -501,10 +534,11 @@ class SupabaseDatabase:
         }
 
     def _normalize_product(self, row: dict) -> dict:
+        name = normalize_name(row.get("name") or "")
         return {
             "id": int(row["id"]),
-            "name": row.get("name") or "",
-            "category": row.get("category") or "",
+            "name": name,
+            "category": display_category_for(name, row.get("category") or "verduras"),
             "estimated_price": int(row.get("estimated_price") or 0),
             "is_active": bool(row.get("is_active")),
             "created_at": row.get("created_at") or "",
@@ -512,7 +546,7 @@ class SupabaseDatabase:
         }
 
     def _normalize_order(self, row: dict) -> dict:
-        return {
+        order = {
             "id": int(row["id"]),
             "client_id": int(row["client_id"]),
             "source_order_id": int(row["source_order_id"]) if row.get("source_order_id") is not None else None,
@@ -524,6 +558,7 @@ class SupabaseDatabase:
             "updated_at": row.get("updated_at") or "",
             "purchased_at": row.get("purchased_at") or None,
         }
+        return self._decorate_order_totals(order)
 
     def _normalize_item(self, row: dict) -> dict:
         return {
@@ -540,13 +575,32 @@ class SupabaseDatabase:
             "was_missing": bool(row.get("was_missing")),
         }
 
-    def _product_payload(self, item: dict) -> dict:
+    def _product_payload(self, item: dict, legacy_category: bool = False) -> dict:
+        category = item["category"].strip().lower()
+        if legacy_category and category != "frutas":
+            category = "verduras"
         return {
-            "name": item["name"].strip(),
-            "category": item["category"].strip().lower(),
+            "name": normalize_name(item["name"]),
+            "category": category,
             "estimated_price": int(item["estimated_price"]),
             "is_active": True,
         }
+
+    def _decorate_order_totals(self, order: dict) -> dict:
+        subtotal_estimated = int(order.get("estimated_total") or 0)
+        subtotal_actual = int(order["actual_total"]) if order.get("actual_total") is not None else None
+        actual_base = subtotal_actual if subtotal_actual is not None else subtotal_estimated
+        order["subtotal_estimated"] = subtotal_estimated
+        order["subtotal_actual"] = subtotal_actual
+        order["delivery_fee"] = DELIVERY_FEE
+        order["estimated_total_with_delivery"] = subtotal_estimated + DELIVERY_FEE
+        order["actual_total_with_delivery"] = actual_base + DELIVERY_FEE
+        order["display_total"] = actual_base + DELIVERY_FEE
+        return order
+
+    def _is_category_constraint_error(self, exc: Exception) -> bool:
+        message = str(exc).lower()
+        return "category" in message and ("check constraint" in message or "violates check constraint" in message)
 
     def _month_filters(self, month: str) -> list[tuple[str, str]]:
         year, month_number = month.split("-", 1)

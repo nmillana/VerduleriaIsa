@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import mimetypes
 import os
@@ -12,6 +12,7 @@ from urllib.parse import parse_qs
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
+from verduleria.catalog_meta import CATEGORY_CHOICES, DELIVERY_FEE, category_label
 from verduleria.database import Database
 from verduleria.env import load_env_file
 from verduleria.security import hash_password, make_session_token, read_session_token, verify_password
@@ -59,6 +60,7 @@ class VerduleriaApp:
         self.templates.filters["currency"] = format_currency
         self.templates.filters["qty"] = format_quantity
         self.templates.filters["status_label"] = lambda value: STATUS_LABELS.get(value, value)
+        self.templates.filters["category_label"] = category_label
 
     def __call__(self, environ: dict, start_response: Callable):
         request = build_request(environ)
@@ -517,6 +519,8 @@ class VerduleriaApp:
     ) -> Response:
         template = self.templates.get_template(template_name)
         default_context = {
+            "category_choices": CATEGORY_CHOICES,
+            "delivery_fee": DELIVERY_FEE,
             "notice": context.get("notice", ""),
             "request_month": current_month(),
             "status_labels": STATUS_LABELS,

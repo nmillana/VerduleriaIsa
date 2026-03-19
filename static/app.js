@@ -8,22 +8,25 @@ function initOrderForm() {
 
     const inputs = Array.from(form.querySelectorAll("[data-quantity-input]"));
     const totalNode = form.querySelector("[data-estimated-total]");
+    const subtotalNode = form.querySelector("[data-subtotal-estimated]");
     const countNode = form.querySelector("[data-selected-count]");
     const search = form.querySelector("[data-product-search]");
     const rows = Array.from(form.querySelectorAll(".product-row"));
+    const deliveryFee = Number(form.dataset.deliveryFee || 0);
 
     const updateSummary = () => {
-        let total = 0;
+        let subtotal = 0;
         let selected = 0;
         for (const input of inputs) {
             const quantity = Number(input.value || 0);
             const price = Number(input.dataset.price || 0);
             if (quantity > 0) {
                 selected += 1;
-                total += quantity * price;
+                subtotal += quantity * price;
             }
         }
-        if (totalNode) totalNode.textContent = formatClp(total);
+        if (subtotalNode) subtotalNode.textContent = formatClp(subtotal);
+        if (totalNode) totalNode.textContent = formatClp(subtotal + deliveryFee);
         if (countNode) countNode.textContent = selected.toString();
     };
 

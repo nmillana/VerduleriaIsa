@@ -15,16 +15,16 @@
 <section class="panel">
     <div class="grid three-up">
         <article class="stat-card">
-            <span class="stat-value">{{ order.estimated_total|currency }}</span>
-            <span class="stat-label">total estimado</span>
+            <span class="stat-value">{{ order.subtotal_estimated|currency }}</span>
+            <span class="stat-label">subtotal de productos</span>
         </article>
         <article class="stat-card">
-            <span class="stat-value">{{ (order.actual_total or order.estimated_total)|currency }}</span>
+            <span class="stat-value">{{ order.delivery_fee|currency }}</span>
+            <span class="stat-label">despacho fijo</span>
+        </article>
+        <article class="stat-card">
+            <span class="stat-value">{{ order.display_total|currency }}</span>
             <span class="stat-label">total final o proyectado</span>
-        </article>
-        <article class="stat-card">
-            <span class="stat-value">{{ order['items']|length }}</span>
-            <span class="stat-label">productos en el pedido</span>
         </article>
     </div>
 </section>
@@ -36,8 +36,8 @@
             <tr>
                 <th>Producto</th>
                 <th>Cantidad</th>
-                <th>Precio estimado</th>
-                <th>Precio real</th>
+                <th>Subtotal estimado</th>
+                <th>Subtotal real</th>
                 <th>Nota</th>
             </tr>
         </thead>
@@ -55,4 +55,3 @@
     </table>
 </section>
 {% endblock %}
-

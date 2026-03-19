@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import sqlite3
 from collections import OrderedDict
@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Iterable
 
+from verduleria.catalog_meta import DELIVERY_FEE, category_sort_key, display_category_for, normalize_name
 from verduleria.catalog_seed import CATALOG_SEED
 
 
@@ -251,10 +252,15 @@ class Database:
         query = "SELECT * FROM products"
         if active_only:
             query += " WHERE is_active = 1"
-        query += " ORDER BY category, name"
         with self.connect() as conn:
-            rows = conn.execute(query).fetchall()
-        return [dict(row) for row in rows]
+            rows = [dict(row) for row in conn.execute(query).fetchall()]
+        products = []
+        for row in rows:
+            row["name"] = normalize_name(row["name"])
+            row["category"] = display_category_for(row["name"], row.get("category", "verduras"))
+            products.append(row)
+        products.sort(key=lambda item: (category_sort_key(item["category"]), item["name"].lower()))
+        return products
 
     def grouped_products(self, active_only: bool = True) -> OrderedDict[str, list[dict]]:
         groups: OrderedDict[str, list[dict]] = OrderedDict()
@@ -386,7 +392,7 @@ class Database:
             ).fetchall()
         order_dict = dict(order)
         order_dict["items"] = [dict(item) for item in items]
-        return order_dict
+        return self._decorate_order_totals(order_dict)
 
     def get_client_order(self, order_id: int, client_id: int) -> dict | None:
         order = self.get_order(order_id)
@@ -432,8 +438,7 @@ class Database:
         for row in orders:
             order = dict(row)
             order["items"] = items_by_order.get(row["id"], [])
-            order["display_total"] = order["actual_total"] or order["estimated_total"]
-            results.append(order)
+            results.append(self._decorate_order_totals(order))
         return results
 
     def client_dashboard(self, client_id: int, month: str) -> dict:
@@ -482,7 +487,7 @@ class Database:
         query += " ORDER BY o.created_at DESC"
         with self.connect() as conn:
             rows = conn.execute(query, params).fetchall()
-        return [dict(row) for row in rows]
+        return [self._decorate_order_totals(dict(row)) for row in rows]
 
     def update_order_actuals(
         self,
@@ -541,6 +546,18 @@ class Database:
                 ),
             )
 
+    def _decorate_order_totals(self, order: dict) -> dict:
+        subtotal_estimated = int(order.get("estimated_total") or 0)
+        subtotal_actual = int(order["actual_total"]) if order.get("actual_total") is not None else None
+        actual_base = subtotal_actual if subtotal_actual is not None else subtotal_estimated
+        order["subtotal_estimated"] = subtotal_estimated
+        order["subtotal_actual"] = subtotal_actual
+        order["delivery_fee"] = DELIVERY_FEE
+        order["estimated_total_with_delivery"] = subtotal_estimated + DELIVERY_FEE
+        order["actual_total_with_delivery"] = actual_base + DELIVERY_FEE
+        order["display_total"] = actual_base + DELIVERY_FEE
+        return order
+
     def admin_dashboard(self, month: str) -> dict:
         with self.connect() as conn:
             summary = conn.execute(
@@ -586,8 +603,10 @@ class Database:
                 """,
                 (month,),
             ).fetchall()
+        summary_dict = dict(summary)
+        summary_dict["revenue"] = int(summary_dict.get("revenue") or 0) + int(summary_dict.get("order_count") or 0) * DELIVERY_FEE
         return {
-            "summary": dict(summary),
+            "summary": summary_dict,
             "top_products": [dict(row) for row in top_products],
             "low_products": [dict(row) for row in low_products],
         }
