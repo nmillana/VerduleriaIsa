@@ -529,17 +529,6 @@ textarea {
     font-size: 0.78rem;
 }
 
-.landing-help {
-    text-align: center;
-    color: var(--muted);
-    font-size: 0.95rem;
-}
-
-.landing-help a {
-    color: var(--accent);
-    font-weight: 600;
-}
-
 .admin-access {
     margin-top: 0.2rem;
 }
@@ -581,3 +570,5 @@ textarea {
         opacity: 0.1;
     }
 }
+
+
