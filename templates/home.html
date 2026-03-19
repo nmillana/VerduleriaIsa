@@ -1,56 +1,19 @@
 ﻿{% extends "base.html" %}
 {% block content %}
-<section class="hero hero-grid">
-    <div class="hero-copy">
-        <p class="eyebrow">Verduleria Isa</p>
-        <h1>Pedidos semanales simples, claros y fáciles de seguir.</h1>
-        <p class="lead">Organiza a tus clientas, repite pedidos anteriores y ajusta precios reales sin depender de planillas largas ni pantallas recargadas.</p>
-        <div class="hero-actions">
-            <a class="button primary" href="/registro">Registrar clienta</a>
-            <a class="button ghost" href="/login-cliente">Entrar como clienta</a>
-            <a class="button ghost" href="/admin/login">Entrar como administradora</a>
-        </div>
-        <div class="hero-points">
-            <span>Historial por clienta</span>
-            <span>Pedido semanal editable</span>
-            <span>Resumen mensual</span>
-        </div>
-    </div>
-    <div class="hero-card">
-        <p class="eyebrow">Datos</p>
-        <h2>Información centralizada</h2>
-        <p>La app guarda clientas, pedidos, historial y precios en:</p>
-        <code>{{ db_path }}</code>
-        <p>Desde aquí puedes administrar catálogo, compras reales y seguimiento semanal en un solo lugar.</p>
-    </div>
-</section>
-
-<section class="grid three-up">
-    <article class="stat-card">
-        <span class="stat-value">{{ product_count }}</span>
-        <span class="stat-label">productos activos en catálogo</span>
-    </article>
-    <article class="stat-card">
-        <span class="stat-value">{{ client_count }}</span>
-        <span class="stat-label">clientas registradas</span>
-    </article>
-    <article class="stat-card">
-        <span class="stat-value">1</span>
-        <span class="stat-label">flujo simple para administrar pedidos</span>
-    </article>
-</section>
-
-<section class="panel">
-    <h2>Cómo se usa</h2>
-    <div class="grid two-up compact-grid">
-        <div>
-            <h3>Clientas</h3>
-            <p>Se registran con nombre, correo, teléfono y dirección. Luego ingresan para hacer el pedido, repetir uno anterior y revisar su historial.</p>
-        </div>
-        <div>
-            <h3>Administración</h3>
-            <p>Configuras tu cuenta una vez y desde ahí ves ingresos mensuales, pedidos pendientes, productos más pedidos y cambios de precios reales.</p>
-        </div>
+<section class="access-landing">
+    <div class="access-card">
+        <p class="eyebrow">Acceso</p>
+        <h1>Haz tu pedido semanal.</h1>
+        <p class="lead">Ingresa con tu correo para continuar o crea tu registro si es tu primera vez.</p>
+        <form method="post" action="/login-cliente" class="stacked-form access-form">
+            <label>Clienta
+                <input type="email" name="email" placeholder="Ingresa tu correo" required>
+            </label>
+            <button class="button primary full-width" type="submit">Continuar</button>
+        </form>
+        <a class="button ghost full-width" href="/registro">Crear mi usuario</a>
+        <p class="landing-help">¿Aún no estás registrada? <a href="/registro">Crear registro</a></p>
+        <a class="button ghost full-width admin-access" href="/admin/login">Administrador</a>
     </div>
 </section>
 {% endblock %}
