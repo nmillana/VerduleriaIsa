@@ -70,18 +70,20 @@ code {
 .brand-mark {
     display: grid;
     place-items: center;
-    width: 82px;
-    height: 82px;
+    width: 108px;
+    height: 78px;
     border-radius: 18px;
-    background: rgba(255, 255, 255, 0.95);
+    background: rgba(255, 255, 255, 0.98);
     border: 1px solid rgba(20, 88, 67, 0.08);
     box-shadow: 0 10px 24px rgba(24, 77, 59, 0.08);
+    overflow: hidden;
 }
 
 .brand-logo {
-    width: 60px;
-    height: 60px;
+    width: 88px;
+    height: 88px;
     object-fit: contain;
+    display: block;
 }
 
 .brand-copy {
@@ -498,7 +500,7 @@ textarea {
     min-height: calc(100vh - 170px);
     display: grid;
     place-items: center;
-    padding: 1rem 0 2rem;
+    padding: 1.5rem 0 2.5rem;
     isolation: isolate;
 }
 
@@ -506,21 +508,38 @@ textarea {
     content: "";
     position: absolute;
     inset: 0;
-    background: url("/static/logo-verduleria-isa.png") center 44% / min(60vw, 520px) no-repeat;
-    opacity: 0.12;
+    background: url("/static/logo-verduleria-isa.png") center center / min(58vw, 620px) no-repeat;
+    opacity: 0.08;
     z-index: -1;
     pointer-events: none;
 }
 
 .access-card {
-    width: min(440px, 100%);
+    width: min(460px, calc(100% - 1rem));
     display: grid;
     gap: 1rem;
-    background: rgba(255, 255, 255, 0.92);
+    padding: 1.75rem;
+    background: rgba(255, 255, 255, 0.94);
+}
+
+.access-card__logo-wrap {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    width: 100%;
+    margin-bottom: 0.1rem;
+}
+
+.access-card__logo {
+    width: min(250px, 100%);
+    max-width: 250px;
+    height: auto;
+    display: block;
 }
 
 .access-card h1 {
     font-size: clamp(2rem, 4vw, 2.6rem);
+    margin-bottom: 0.1rem;
 }
 
 .access-form label {
@@ -530,7 +549,7 @@ textarea {
 }
 
 .admin-access {
-    margin-top: 0.2rem;
+    margin-top: 0.15rem;
 }
 
 @media (max-width: 960px) {
@@ -564,10 +583,29 @@ textarea {
         padding: 0.5rem 0 1.5rem;
     }
 
+    .brand-mark {
+        width: 96px;
+        height: 72px;
+    }
+
+    .brand-logo {
+        width: 78px;
+        height: 78px;
+    }
+
     .access-landing::before {
-        background-size: min(78vw, 360px);
-        background-position: center 32%;
-        opacity: 0.1;
+        background-size: min(82vw, 360px);
+        background-position: center 28%;
+        opacity: 0.08;
+    }
+
+    .access-card {
+        width: min(440px, 100%);
+        padding: 1.4rem;
+    }
+
+    .access-card__logo {
+        max-width: 210px;
     }
 }
 
