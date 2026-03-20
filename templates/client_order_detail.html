@@ -15,8 +15,8 @@
 <section class="panel">
     <div class="grid three-up">
         <article class="stat-card">
-            <span class="stat-value">{{ order.subtotal_estimated|currency }}</span>
-            <span class="stat-label">subtotal de productos</span>
+            <span class="stat-value">{{ order.display_subtotal|currency }}</span>
+            <span class="stat-label">{{ order.display_subtotal_label }}</span>
         </article>
         <article class="stat-card">
             <span class="stat-value">{{ order.delivery_fee|currency }}</span>

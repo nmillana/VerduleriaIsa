@@ -374,16 +374,22 @@ class SupabaseDatabase:
             bucket["revenue"] += int(item["actual_total"] or item["estimated_total"])
         ranked = sorted(
             grouped.values(),
-            key=lambda row: (-row["request_count"], -row["total_quantity"], row["product_name"]),
+            key=lambda row: (-row["request_count"], -row["total_quantity"], row["product_name"].lower()),
         )
-        low_ranked = sorted(
-            grouped.values(),
-            key=lambda row: (row["request_count"], row["total_quantity"], row["product_name"]),
-        )
+        top_products = ranked[:5]
+        top_names = {row["product_name"] for row in top_products}
+        low_products = [
+            row
+            for row in sorted(
+                grouped.values(),
+                key=lambda row: (row["request_count"], row["total_quantity"], row["product_name"].lower()),
+            )
+            if row["product_name"] not in top_names
+        ][:5]
         return {
             "summary": summary,
-            "top_products": ranked[:5],
-            "low_products": low_ranked[:5],
+            "top_products": top_products,
+            "low_products": low_products,
         }
 
     def _fetch_order_items(self, order_ids: list[int]) -> dict[int, list[dict]]:
@@ -592,6 +598,10 @@ class SupabaseDatabase:
         actual_base = subtotal_actual if subtotal_actual is not None else subtotal_estimated
         order["subtotal_estimated"] = subtotal_estimated
         order["subtotal_actual"] = subtotal_actual
+        order["display_subtotal"] = actual_base
+        order["display_subtotal_label"] = (
+            "subtotal real de productos" if subtotal_actual is not None else "subtotal estimado de productos"
+        )
         order["delivery_fee"] = DELIVERY_FEE
         order["estimated_total_with_delivery"] = subtotal_estimated + DELIVERY_FEE
         order["actual_total_with_delivery"] = actual_base + DELIVERY_FEE

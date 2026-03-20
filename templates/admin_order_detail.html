@@ -17,7 +17,7 @@
     </article>
     <article class="panel">
         <h2>Totales</h2>
-        <p>Subtotal productos: <strong>{{ order.subtotal_estimated|currency }}</strong></p>
+        <p>{{ order.display_subtotal_label|capitalize }}: <strong>{{ order.display_subtotal|currency }}</strong></p>
         <p>Despacho: <strong>{{ order.delivery_fee|currency }}</strong></p>
         <p>Actual/proyectado: <strong>{{ order.display_total|currency }}</strong></p>
         <p>Estado actual: <strong>{{ order.status|status_label }}</strong></p>

@@ -552,6 +552,10 @@ class Database:
         actual_base = subtotal_actual if subtotal_actual is not None else subtotal_estimated
         order["subtotal_estimated"] = subtotal_estimated
         order["subtotal_actual"] = subtotal_actual
+        order["display_subtotal"] = actual_base
+        order["display_subtotal_label"] = (
+            "subtotal real de productos" if subtotal_actual is not None else "subtotal estimado de productos"
+        )
         order["delivery_fee"] = DELIVERY_FEE
         order["estimated_total_with_delivery"] = subtotal_estimated + DELIVERY_FEE
         order["actual_total_with_delivery"] = actual_base + DELIVERY_FEE
@@ -571,42 +575,40 @@ class Database:
                 """,
                 (month,),
             ).fetchone()
-            top_products = conn.execute(
-                """
-                SELECT
-                    oi.product_name,
-                    COUNT(*) AS request_count,
-                    ROUND(SUM(oi.quantity), 2) AS total_quantity,
-                    COALESCE(SUM(COALESCE(oi.actual_total, oi.estimated_total)), 0) AS revenue
-                FROM order_items oi
-                JOIN orders o ON o.id = oi.order_id
-                WHERE substr(o.created_at, 1, 7) = ?
-                GROUP BY oi.product_name
-                ORDER BY request_count DESC, total_quantity DESC, oi.product_name
-                LIMIT 5
-                """,
-                (month,),
-            ).fetchall()
-            low_products = conn.execute(
-                """
-                SELECT
-                    oi.product_name,
-                    COUNT(*) AS request_count,
-                    ROUND(SUM(oi.quantity), 2) AS total_quantity,
-                    COALESCE(SUM(COALESCE(oi.actual_total, oi.estimated_total)), 0) AS revenue
-                FROM order_items oi
-                JOIN orders o ON o.id = oi.order_id
-                WHERE substr(o.created_at, 1, 7) = ?
-                GROUP BY oi.product_name
-                ORDER BY request_count ASC, total_quantity ASC, oi.product_name
-                LIMIT 5
-                """,
-                (month,),
-            ).fetchall()
+            ranked_products = [
+                dict(row)
+                for row in conn.execute(
+                    """
+                    SELECT
+                        oi.product_name,
+                        COUNT(*) AS request_count,
+                        ROUND(SUM(oi.quantity), 2) AS total_quantity,
+                        COALESCE(SUM(COALESCE(oi.actual_total, oi.estimated_total)), 0) AS revenue
+                    FROM order_items oi
+                    JOIN orders o ON o.id = oi.order_id
+                    WHERE substr(o.created_at, 1, 7) = ?
+                    GROUP BY oi.product_name
+                    """,
+                    (month,),
+                ).fetchall()
+            ]
         summary_dict = dict(summary)
         summary_dict["revenue"] = int(summary_dict.get("revenue") or 0) + int(summary_dict.get("order_count") or 0) * DELIVERY_FEE
+        top_products = sorted(
+            ranked_products,
+            key=lambda row: (-int(row["request_count"]), -float(row["total_quantity"]), row["product_name"].lower()),
+        )[:5]
+        top_names = {row["product_name"] for row in top_products}
+        low_products = [
+            row
+            for row in sorted(
+                ranked_products,
+                key=lambda row: (int(row["request_count"]), float(row["total_quantity"]), row["product_name"].lower()),
+            )
+            if row["product_name"] not in top_names
+        ][:5]
         return {
             "summary": summary_dict,
-            "top_products": [dict(row) for row in top_products],
-            "low_products": [dict(row) for row in low_products],
+            "top_products": top_products,
+            "low_products": low_products,
         }

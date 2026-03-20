@@ -62,6 +62,8 @@
                     {% endfor %}
                 </tbody>
             </table>
+        {% elif dashboard.top_products %}
+            <p class="muted">Aún no hay suficientes productos distintos para mostrar un ranking separado de menos solicitados.</p>
         {% else %}
             <p class="muted">Todavía no hay pedidos este mes.</p>
         {% endif %}
