@@ -117,9 +117,6 @@ class VerduleriaApp:
             "home.html",
             {
                 "title": "Verduleria Isa",
-                "product_count": len(self.db.list_products(active_only=True)),
-                "client_count": len(self.db.list_clients()),
-                "db_path": str(self.db.path),
             },
             session=session,
         )
