@@ -7,6 +7,7 @@
         <p class="muted">{{ order.created_at }} | Estado: {{ order.status|status_label }}</p>
     </div>
     <div class="hero-actions">
+        <a class="button ghost" href="/cliente/pedido/{{ order.id }}/pdf">Descargar PDF</a>
         <a class="button ghost" href="/cliente/pedido/nuevo?source={{ order.id }}">Repetir pedido</a>
         <a class="button ghost" href="/cliente/dashboard">Volver al panel</a>
     </div>

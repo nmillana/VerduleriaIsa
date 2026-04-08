@@ -12,11 +12,15 @@ from urllib.parse import parse_qs
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
+from verduleria.cache import get_grouped_products, invalidate_products_cache
 from verduleria.catalog_meta import CATEGORY_CHOICES, DELIVERY_FEE, category_label
 from verduleria.database import Database
 from verduleria.env import load_env_file
+from verduleria.export import export_weekly_consolidation_to_excel
+from verduleria.pdf_generator import generate_order_pdf, generate_monthly_invoice_pdf
 from verduleria.security import hash_password, make_session_token, read_session_token, verify_password
 from verduleria.storage import create_database
+from verduleria.whatsapp_utils import generate_whatsapp_link, format_phone_international, is_valid_phone
 
 
 STATUS_LABELS = {
@@ -89,6 +93,11 @@ class VerduleriaApp:
             return self.client_order_form(request, session)
         if request.path == "/cliente/pedido/guardar" and request.method == "POST":
             return self.client_order_save(request, session)
+        # Rutas específicas de PDF (antes de ruta genérica)
+        if request.path.endswith("/pdf") and request.path.startswith("/cliente/pedido/"):
+            return self.client_order_pdf(request, session)
+        if request.path.startswith("/cliente/factura/") and request.path.endswith("/pdf"):
+            return self.client_monthly_invoice_pdf(request, session)
         if request.path.startswith("/cliente/pedido/"):
             return self.client_order_detail(request, session)
         if request.path == "/admin/setup":
@@ -99,8 +108,15 @@ class VerduleriaApp:
             return self.admin_dashboard(request, session)
         if request.path == "/admin/productos":
             return self.admin_products(request, session)
+        if request.path == "/admin/consolidado":
+            return self.admin_consolidation(request, session)
+        if request.path == "/admin/consolidado/exportar":
+            return self.admin_consolidation_export(request, session)
         if request.path == "/admin/pedidos":
             return self.admin_orders(request, session)
+        # Rutas específicas de admin pedidos (antes de ruta genérica)
+        if request.path.endswith("/whatsapp-link") and request.method == "POST":
+            return self.admin_order_whatsapp_link(request, session)
         if request.path.startswith("/admin/pedido/"):
             return self.admin_order_detail(request, session)
         if request.path == "/admin/clientes":
@@ -217,12 +233,16 @@ class VerduleriaApp:
         if source_id and source_id.isdigit():
             source_order = self.db.get_client_order(int(source_id), client["id"])
             quantities = self.db.repeatable_order_map(int(source_id), client["id"])
+        products = get_grouped_products(
+            lambda: self.db.grouped_products(active_only=True),
+            ttl_seconds=3600
+        )
         return self.render(
             "client_order_form.html",
             {
                 "title": "Nuevo pedido",
                 "client": client,
-                "products": self.db.grouped_products(active_only=True),
+                "products": products,
                 "quantities": quantities,
                 "source_order": source_order,
                 "error": query_value(request, "error"),
@@ -257,12 +277,16 @@ class VerduleriaApp:
                 int(source_order_id) if source_order_id.isdigit() else None,
             )
         except ValueError as exc:
+            products = get_grouped_products(
+                lambda: self.db.grouped_products(active_only=True),
+                ttl_seconds=3600
+            )
             return self.render(
                 "client_order_form.html",
                 {
                     "title": "Nuevo pedido",
                     "client": client,
-                    "products": self.db.grouped_products(active_only=True),
+                    "products": products,
                     "quantities": quantities,
                     "source_order": None,
                     "error": str(exc),
@@ -399,13 +423,19 @@ class VerduleriaApp:
             is_active = form_value(request, "is_active") == "1"
             try:
                 estimated_price = int(float(estimated_price_raw))
+                product_id_int = int(product_id) if product_id.isdigit() else None
                 self.db.save_product(
-                    int(product_id) if product_id.isdigit() else None,
+                    product_id_int,
                     name,
                     category,
                     estimated_price,
                     is_active,
                 )
+                # Invalidar caché de productos
+                invalidate_products_cache()
+                # Recalcular pedidos pendientes si es actualización de producto existente
+                if product_id_int:
+                    self.db.update_pending_orders_with_new_price(product_id_int, estimated_price)
             except (ValueError, sqlite3.IntegrityError):
                 return self.render(
                     "admin_products.html",
@@ -450,6 +480,89 @@ class VerduleriaApp:
             },
             session=session,
         )
+
+    def admin_consolidation(self, request: Request, session: dict | None) -> Response:
+        """Vista de consolidado semanal de todos los pedidos."""
+        admin = self.require_admin(session)
+        if not admin:
+            return redirect("/admin/login?notice=Debes%20ingresar")
+
+        month = query_value(request, "month") or current_month()
+        year, month_num = month.split("-")
+
+        # Calcular rango de fechas del mes
+        from datetime import datetime, timedelta
+        first_day = datetime(int(year), int(month_num), 1)
+        if int(month_num) == 12:
+            last_day = datetime(int(year) + 1, 1, 1) - timedelta(days=1)
+        else:
+            last_day = datetime(int(year), int(month_num) + 1, 1) - timedelta(days=1)
+
+        consolidation = self.db.consolidate_orders_by_week(
+            first_day.strftime("%Y-%m-%d"),
+            last_day.strftime("%Y-%m-%d"),
+        )
+
+        return self.render(
+            "admin_consolidation.html",
+            {
+                "title": "Consolidado de Compras",
+                "admin": admin,
+                "consolidation": consolidation,
+                "month": month,
+                "notice": query_value(request, "notice"),
+            },
+            session=session,
+        )
+
+    def admin_consolidation_export(self, request: Request, session: dict | None) -> Response:
+        """Exportar consolidado semanal a Excel."""
+        admin = self.require_admin(session)
+        if not admin:
+            return Response(b'{"error": "No autorizado"}', status="401 UNAUTHORIZED", headers=[("Content-Type", "application/json")])
+
+        month = query_value(request, "month") or current_month()
+        year, month_num = month.split("-")
+
+        # Calcular rango de fechas del mes
+        from datetime import datetime, timedelta
+        first_day = datetime(int(year), int(month_num), 1)
+        if int(month_num) == 12:
+            last_day = datetime(int(year) + 1, 1, 1) - timedelta(days=1)
+        else:
+            last_day = datetime(int(year), int(month_num) + 1, 1) - timedelta(days=1)
+
+        try:
+            consolidation = self.db.consolidate_orders_by_week(
+                first_day.strftime("%Y-%m-%d"),
+                last_day.strftime("%Y-%m-%d"),
+            )
+
+            if not consolidation:
+                return self.render(
+                    "not_found.html",
+                    {"title": "Sin datos para exportar"},
+                    status="404 NOT FOUND",
+                    session=session,
+                )
+
+            excel_bytes = export_weekly_consolidation_to_excel(consolidation)
+
+            return Response(
+                body=excel_bytes,
+                status="200 OK",
+                headers=[
+                    ("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
+                    ("Content-Disposition", f'attachment; filename="consolidado_{month}.xlsx"'),
+                ],
+            )
+        except Exception as e:
+            return self.render(
+                "not_found.html",
+                {"title": "Error exportando", "error": str(e)},
+                status="500 INTERNAL SERVER ERROR",
+                session=session,
+            )
 
     def admin_order_detail(self, request: Request, session: dict | None) -> Response:
         admin = self.require_admin(session)
@@ -504,6 +617,121 @@ class VerduleriaApp:
                 "clients": self.db.list_clients(),
             },
             session=session,
+        )
+
+    def client_order_pdf(self, request: Request, session: dict | None) -> Response:
+        """Descargar PDF de un pedido individual."""
+        client = self.require_client(session)
+        if not client:
+            return redirect("/login-cliente?notice=Debes%20ingresar")
+
+        path_parts = request.path.strip("/").split("/")
+        if len(path_parts) < 3 or not path_parts[2].isdigit():
+            return self.render("not_found.html", {"title": "No encontrado"}, status="404 NOT FOUND", session=session)
+
+        order_id = int(path_parts[2])
+        order = self.db.get_client_order(order_id, client["id"])
+        if not order:
+            return self.render("not_found.html", {"title": "Pedido no encontrado"}, status="404 NOT FOUND", session=session)
+
+        try:
+            pdf_bytes = generate_order_pdf(order)
+            return Response(
+                body=pdf_bytes,
+                status="200 OK",
+                headers=[
+                    ("Content-Type", "application/pdf"),
+                    ("Content-Disposition", f'attachment; filename="pedido_{order_id}.pdf"'),
+                ],
+            )
+        except Exception as e:
+            return self.render(
+                "not_found.html",
+                {"title": "Error generando PDF", "error": str(e)},
+                status="500 INTERNAL SERVER ERROR",
+                session=session,
+            )
+
+    def client_monthly_invoice_pdf(self, request: Request, session: dict | None) -> Response:
+        """Descargar PDF de factura mensual consolidada."""
+        client = self.require_client(session)
+        if not client:
+            return redirect("/login-cliente?notice=Debes%20ingresar")
+
+        path_parts = request.path.strip("/").split("/")
+        if len(path_parts) < 3:
+            return self.render("not_found.html", {"title": "No encontrado"}, status="404 NOT FOUND", session=session)
+
+        try:
+            month = f"{path_parts[2]}-{path_parts[3]}"  # mes-año
+            orders = self.db.list_orders_for_client(client["id"], month=month)
+
+            if not orders:
+                return self.render(
+                    "not_found.html",
+                    {"title": "Sin pedidos en este mes"},
+                    status="404 NOT FOUND",
+                    session=session,
+                )
+
+            # Obtener tipo de pago del cliente (si existe)
+            billing_type = client.get("billing_type", "semanal")
+
+            pdf_bytes = generate_monthly_invoice_pdf(orders, billing_type)
+            return Response(
+                body=pdf_bytes,
+                status="200 OK",
+                headers=[
+                    ("Content-Type", "application/pdf"),
+                    ("Content-Disposition", f'attachment; filename="factura_{month}.pdf"'),
+                ],
+            )
+        except Exception as e:
+            return self.render(
+                "not_found.html",
+                {"title": "Error generando factura", "error": str(e)},
+                status="500 INTERNAL SERVER ERROR",
+                session=session,
+            )
+
+    def admin_order_whatsapp_link(self, request: Request, session: dict | None) -> Response:
+        """Generar link de WhatsApp para enviar detalles del pedido."""
+        admin = self.require_admin(session)
+        if not admin:
+            return Response(b'{"error": "No autorizado"}', status="401 UNAUTHORIZED", headers=[("Content-Type", "application/json")])
+
+        path_parts = request.path.strip("/").split("/")
+        if len(path_parts) < 2 or not path_parts[2].isdigit():
+            return Response('{"error": "Pedido no valido"}'.encode(), status="400 BAD REQUEST", headers=[("Content-Type", "application/json")])
+
+        order_id = int(path_parts[2])
+        order = self.db.get_order(order_id)
+
+        if not order:
+            return Response('{"error": "Pedido no encontrado"}'.encode(), status="404 NOT FOUND", headers=[("Content-Type", "application/json")])
+
+        # Obtener número de teléfono del cliente
+        client_phone = order.get("client_phone", "")
+        if not is_valid_phone(client_phone):
+            return Response(
+                '{"error": "Numero de telefono no valido"}'.encode(),
+                status="400 BAD REQUEST",
+                headers=[("Content-Type", "application/json")],
+            )
+
+        # Formatear teléfono a formato internacional
+        phone_intl = format_phone_international(client_phone)
+
+        # URL del PDF
+        pdf_url = f"https://verduleriaisa.onrender.com/cliente/pedido/{order_id}/pdf"
+
+        # Generar link de WhatsApp
+        whatsapp_link = generate_whatsapp_link(phone_intl, order_id, pdf_url)
+
+        return Response(
+            f'{{"whatsapp_link": "{whatsapp_link}"}}'.encode("utf-8"),
+            status="200 OK",
+            headers=[("Content-Type", "application/json")],
         )
 
     def render(

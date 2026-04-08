@@ -612,3 +612,146 @@ class Database:
             "top_products": top_products,
             "low_products": low_products,
         }
+
+    def update_pending_orders_with_new_price(self, product_id: int, new_price: int) -> int:
+        """
+        Recalcular pedidos en estado 'pendiente' cuando cambia el precio de un producto.
+
+        Lógica:
+        - Solo afecta pedidos con status='pendiente'
+        - Mantiene estimated_total (precio antiguo)
+        - Actualiza actual_price y actual_total (precio nuevo)
+        - Recalcula el total del pedido
+
+        Args:
+            product_id: ID del producto que cambió de precio
+            new_price: Nuevo precio del producto
+
+        Returns:
+            Cantidad de órdenes actualizadas
+        """
+        stamp = now_str()
+        updated_orders = 0
+
+        with self.connect() as conn:
+            # 1. Encontrar todos los order_items con este producto en órdenes 'pendiente'
+            items = conn.execute(
+                """
+                SELECT oi.id, oi.order_id, oi.quantity
+                FROM order_items oi
+                JOIN orders o ON o.id = oi.order_id
+                WHERE oi.product_id = ? AND o.status = 'pendiente'
+                """,
+                (product_id,),
+            ).fetchall()
+
+            if not items:
+                return 0
+
+            # 2. Actualizar cada item con el nuevo precio
+            for item in items:
+                item_id = item["id"]
+                quantity = float(item["quantity"])
+                actual_total = int(round(new_price * quantity))
+
+                conn.execute(
+                    """
+                    UPDATE order_items
+                    SET actual_price = ?, actual_total = ?
+                    WHERE id = ?
+                    """,
+                    (new_price, actual_total, item_id),
+                )
+
+            # 3. Recalcular totales para cada orden afectada
+            order_ids = list(set(item["order_id"] for item in items))
+            for order_id in order_ids:
+                totals = conn.execute(
+                    """
+                    SELECT
+                        SUM(estimated_total) AS estimated_total,
+                        SUM(COALESCE(actual_total, estimated_total)) AS display_total
+                    FROM order_items
+                    WHERE order_id = ?
+                    """,
+                    (order_id,),
+                ).fetchone()
+
+                conn.execute(
+                    """
+                    UPDATE orders
+                    SET actual_total = ?, updated_at = ?
+                    WHERE id = ?
+                    """,
+                    (
+                        totals["display_total"] or 0,
+                        stamp,
+                        order_id,
+                    ),
+                )
+                updated_orders += 1
+
+        return updated_orders
+
+    def consolidate_orders_by_week(self, from_date: str, to_date: str) -> dict:
+        """
+        Consolidar pedidos por semana ISO.
+
+        Args:
+            from_date: Fecha inicio (YYYY-MM-DD)
+            to_date: Fecha fin (YYYY-MM-DD)
+
+        Returns:
+            Dict con estructura:
+            {
+                'semana_1': {
+                    'tomate': {'cantidad': 5.5, 'precio_unitario': 500, 'total': 2750},
+                    ...
+                },
+                'semana_2': {...}
+            }
+        """
+        with self.connect() as conn:
+            # Obtener todos los order_items en el rango de fechas
+            items = conn.execute(
+                """
+                SELECT
+                    oi.*,
+                    o.created_at,
+                    STRFTIME('%W', o.created_at) as week_number,
+                    STRFTIME('%Y', o.created_at) as year
+                FROM order_items oi
+                JOIN orders o ON o.id = oi.order_id
+                WHERE DATE(o.created_at) BETWEEN ? AND ?
+                ORDER BY o.created_at, oi.product_name
+                """,
+                (from_date, to_date),
+            ).fetchall()
+
+        # Agrupar por semana
+        consolidation = {}
+        for item in items:
+            week_num = item["week_number"]
+            year = item["year"]
+            week_key = f"Semana {int(week_num):02d} ({year})"
+
+            if week_key not in consolidation:
+                consolidation[week_key] = {}
+
+            product_name = item["product_name"]
+            quantity = float(item["quantity"])
+            # Usar actual_price si existe, sino estimated_price
+            price = item["actual_price"] if item["actual_price"] is not None else item["estimated_price"]
+            total = int(round(price * quantity))
+
+            if product_name not in consolidation[week_key]:
+                consolidation[week_key][product_name] = {
+                    "cantidad": 0.0,
+                    "precio_unitario": price,
+                    "total": 0,
+                }
+
+            consolidation[week_key][product_name]["cantidad"] += quantity
+            consolidation[week_key][product_name]["total"] += total
+
+        return consolidation

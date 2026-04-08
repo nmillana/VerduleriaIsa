@@ -631,3 +631,159 @@ class SupabaseDatabase:
     def _now_iso(self) -> str:
         return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
 
+    def update_pending_orders_with_new_price(self, product_id: int, new_price: int) -> int:
+        """
+        Recalcular pedidos en estado 'pendiente' cuando cambia el precio de un producto.
+
+        Lógica:
+        - Solo afecta pedidos con status='pendiente'
+        - Mantiene estimated_total (precio antiguo)
+        - Actualiza actual_price y actual_total (precio nuevo)
+        - Recalcula el total del pedido
+
+        Args:
+            product_id: ID del producto que cambió de precio
+            new_price: Nuevo precio del producto
+
+        Returns:
+            Cantidad de órdenes actualizadas
+        """
+        try:
+            # 1. Encontrar todos los order_items con este producto en órdenes 'pendiente'
+            items = self._select(
+                "order_items",
+                filters=[
+                    ("product_id", f"eq.{product_id}"),
+                ],
+                order="order_id.asc"
+            )
+
+            # Filtrar solo items de órdenes con status='pendiente'
+            order_ids = set()
+            items_to_update = []
+            for item in items:
+                order_id = item["order_id"]
+                # Verificar que la orden tenga status 'pendiente'
+                order = self._select("orders", filters=[("id", f"eq.{order_id}")])[0]
+                if order.get("status") == "pendiente":
+                    items_to_update.append(item)
+                    order_ids.add(order_id)
+
+            if not items_to_update:
+                return 0
+
+            # 2. Actualizar cada item con el nuevo precio
+            for item in items_to_update:
+                quantity = float(item["quantity"])
+                actual_total = int(round(new_price * quantity))
+                self._update(
+                    "order_items",
+                    [("id", f"eq.{item['id']}")],
+                    {
+                        "actual_price": new_price,
+                        "actual_total": actual_total,
+                    }
+                )
+
+            # 3. Recalcular totales para cada orden afectada
+            updated_count = 0
+            for order_id in order_ids:
+                # Obtener items actualizados de la orden
+                order_items = self._select(
+                    "order_items",
+                    filters=[("order_id", f"eq.{order_id}")],
+                )
+
+                # Calcular nuevos totales
+                estimated_total = sum(int(item.get("estimated_total") or 0) for item in order_items)
+                display_total = sum(
+                    int(item.get("actual_total") or item.get("estimated_total") or 0)
+                    for item in order_items
+                )
+
+                self._update(
+                    "orders",
+                    [("id", f"eq.{order_id}")],
+                    {
+                        "actual_total": display_total,
+                        "updated_at": self._now_iso(),
+                    }
+                )
+                updated_count += 1
+
+            return updated_count
+
+        except Exception:
+            # Si hay error en Supabase, simplemente no actualizar
+            return 0
+
+    def consolidate_orders_by_week(self, from_date: str, to_date: str) -> dict:
+        """
+        Consolidar pedidos por semana ISO.
+
+        Args:
+            from_date: Fecha inicio (YYYY-MM-DD)
+            to_date: Fecha fin (YYYY-MM-DD)
+
+        Returns:
+            Dict con estructura:
+            {
+                'semana_1': {
+                    'tomate': {'cantidad': 5.5, 'precio_unitario': 500, 'total': 2750},
+                    ...
+                },
+                'semana_2': {...}
+            }
+        """
+        try:
+            # Obtener todos los items en el rango
+            items = self._select(
+                "order_items",
+                filters=[
+                    ("orders.created_at", f"gte.{from_date}T00:00:00"),
+                    ("orders.created_at", f"lte.{to_date}T23:59:59"),
+                ],
+                order="product_name.asc",
+            )
+
+            if not items:
+                return {}
+
+            # Necesitamos datos de las órdenes para agrupar por semana
+            # Hacer una query personalizada para obtener con datos de la orden
+            consolidation = {}
+
+            for item in items:
+                order_id = item["order_id"]
+                # Obtener datos de la orden
+                order = self._select("orders", filters=[("id", f"eq.{order_id}")])[0]
+                order_date = self._parse_datetime(order["created_at"])
+
+                # Calcular número de semana ISO
+                week_num = order_date.isocalendar()[1]
+                year = order_date.year
+                week_key = f"Semana {week_num:02d} ({year})"
+
+                if week_key not in consolidation:
+                    consolidation[week_key] = {}
+
+                product_name = item["product_name"]
+                quantity = float(item["quantity"])
+                price = item["actual_price"] if item["actual_price"] is not None else item["estimated_price"]
+                total = int(round(price * quantity))
+
+                if product_name not in consolidation[week_key]:
+                    consolidation[week_key][product_name] = {
+                        "cantidad": 0.0,
+                        "precio_unitario": price,
+                        "total": 0,
+                    }
+
+                consolidation[week_key][product_name]["cantidad"] += quantity
+                consolidation[week_key][product_name]["total"] += total
+
+            return consolidation
+
+        except Exception:
+            return {}
+
