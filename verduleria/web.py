@@ -12,6 +12,7 @@ from urllib.parse import parse_qs
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
+from verduleria.cache import get_grouped_products, invalidate_products_cache
 from verduleria.catalog_meta import CATEGORY_CHOICES, DELIVERY_FEE, category_label
 from verduleria.database import Database
 from verduleria.env import load_env_file
@@ -217,12 +218,16 @@ class VerduleriaApp:
         if source_id and source_id.isdigit():
             source_order = self.db.get_client_order(int(source_id), client["id"])
             quantities = self.db.repeatable_order_map(int(source_id), client["id"])
+        products = get_grouped_products(
+            lambda: self.db.grouped_products(active_only=True),
+            ttl_seconds=3600
+        )
         return self.render(
             "client_order_form.html",
             {
                 "title": "Nuevo pedido",
                 "client": client,
-                "products": self.db.grouped_products(active_only=True),
+                "products": products,
                 "quantities": quantities,
                 "source_order": source_order,
                 "error": query_value(request, "error"),
@@ -257,12 +262,16 @@ class VerduleriaApp:
                 int(source_order_id) if source_order_id.isdigit() else None,
             )
         except ValueError as exc:
+            products = get_grouped_products(
+                lambda: self.db.grouped_products(active_only=True),
+                ttl_seconds=3600
+            )
             return self.render(
                 "client_order_form.html",
                 {
                     "title": "Nuevo pedido",
                     "client": client,
-                    "products": self.db.grouped_products(active_only=True),
+                    "products": products,
                     "quantities": quantities,
                     "source_order": None,
                     "error": str(exc),
@@ -399,13 +408,19 @@ class VerduleriaApp:
             is_active = form_value(request, "is_active") == "1"
             try:
                 estimated_price = int(float(estimated_price_raw))
+                product_id_int = int(product_id) if product_id.isdigit() else None
                 self.db.save_product(
-                    int(product_id) if product_id.isdigit() else None,
+                    product_id_int,
                     name,
                     category,
                     estimated_price,
                     is_active,
                 )
+                # Invalidar caché de productos
+                invalidate_products_cache()
+                # Recalcular pedidos pendientes si es actualización de producto existente
+                if product_id_int:
+                    self.db.update_pending_orders_with_new_price(product_id_int, estimated_price)
             except (ValueError, sqlite3.IntegrityError):
                 return self.render(
                     "admin_products.html",

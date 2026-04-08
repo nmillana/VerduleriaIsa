@@ -612,3 +612,83 @@ class Database:
             "top_products": top_products,
             "low_products": low_products,
         }
+
+    def update_pending_orders_with_new_price(self, product_id: int, new_price: int) -> int:
+        """
+        Recalcular pedidos en estado 'pendiente' cuando cambia el precio de un producto.
+
+        Lógica:
+        - Solo afecta pedidos con status='pendiente'
+        - Mantiene estimated_total (precio antiguo)
+        - Actualiza actual_price y actual_total (precio nuevo)
+        - Recalcula el total del pedido
+
+        Args:
+            product_id: ID del producto que cambió de precio
+            new_price: Nuevo precio del producto
+
+        Returns:
+            Cantidad de órdenes actualizadas
+        """
+        stamp = now_str()
+        updated_orders = 0
+
+        with self.connect() as conn:
+            # 1. Encontrar todos los order_items con este producto en órdenes 'pendiente'
+            items = conn.execute(
+                """
+                SELECT oi.id, oi.order_id, oi.quantity
+                FROM order_items oi
+                JOIN orders o ON o.id = oi.order_id
+                WHERE oi.product_id = ? AND o.status = 'pendiente'
+                """,
+                (product_id,),
+            ).fetchall()
+
+            if not items:
+                return 0
+
+            # 2. Actualizar cada item con el nuevo precio
+            for item in items:
+                item_id = item["id"]
+                quantity = float(item["quantity"])
+                actual_total = int(round(new_price * quantity))
+
+                conn.execute(
+                    """
+                    UPDATE order_items
+                    SET actual_price = ?, actual_total = ?
+                    WHERE id = ?
+                    """,
+                    (new_price, actual_total, item_id),
+                )
+
+            # 3. Recalcular totales para cada orden afectada
+            order_ids = list(set(item["order_id"] for item in items))
+            for order_id in order_ids:
+                totals = conn.execute(
+                    """
+                    SELECT
+                        SUM(estimated_total) AS estimated_total,
+                        SUM(COALESCE(actual_total, estimated_total)) AS display_total
+                    FROM order_items
+                    WHERE order_id = ?
+                    """,
+                    (order_id,),
+                ).fetchone()
+
+                conn.execute(
+                    """
+                    UPDATE orders
+                    SET actual_total = ?, updated_at = ?
+                    WHERE id = ?
+                    """,
+                    (
+                        totals["display_total"] or 0,
+                        stamp,
+                        order_id,
+                    ),
+                )
+                updated_orders += 1
+
+        return updated_orders

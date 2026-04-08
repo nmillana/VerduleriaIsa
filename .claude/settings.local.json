@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pip install:*)",
+      "Bash(git add:*)",
+      "Bash(git commit -m 'Implementar Fase 0, 1 y crear módulos PDF y WhatsApp:*)"
+    ]
+  }
+}

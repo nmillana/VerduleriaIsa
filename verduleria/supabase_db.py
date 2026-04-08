@@ -631,3 +631,89 @@ class SupabaseDatabase:
     def _now_iso(self) -> str:
         return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
 
+    def update_pending_orders_with_new_price(self, product_id: int, new_price: int) -> int:
+        """
+        Recalcular pedidos en estado 'pendiente' cuando cambia el precio de un producto.
+
+        Lógica:
+        - Solo afecta pedidos con status='pendiente'
+        - Mantiene estimated_total (precio antiguo)
+        - Actualiza actual_price y actual_total (precio nuevo)
+        - Recalcula el total del pedido
+
+        Args:
+            product_id: ID del producto que cambió de precio
+            new_price: Nuevo precio del producto
+
+        Returns:
+            Cantidad de órdenes actualizadas
+        """
+        try:
+            # 1. Encontrar todos los order_items con este producto en órdenes 'pendiente'
+            items = self._select(
+                "order_items",
+                filters=[
+                    ("product_id", f"eq.{product_id}"),
+                ],
+                order="order_id.asc"
+            )
+
+            # Filtrar solo items de órdenes con status='pendiente'
+            order_ids = set()
+            items_to_update = []
+            for item in items:
+                order_id = item["order_id"]
+                # Verificar que la orden tenga status 'pendiente'
+                order = self._select("orders", filters=[("id", f"eq.{order_id}")])[0]
+                if order.get("status") == "pendiente":
+                    items_to_update.append(item)
+                    order_ids.add(order_id)
+
+            if not items_to_update:
+                return 0
+
+            # 2. Actualizar cada item con el nuevo precio
+            for item in items_to_update:
+                quantity = float(item["quantity"])
+                actual_total = int(round(new_price * quantity))
+                self._update(
+                    "order_items",
+                    [("id", f"eq.{item['id']}")],
+                    {
+                        "actual_price": new_price,
+                        "actual_total": actual_total,
+                    }
+                )
+
+            # 3. Recalcular totales para cada orden afectada
+            updated_count = 0
+            for order_id in order_ids:
+                # Obtener items actualizados de la orden
+                order_items = self._select(
+                    "order_items",
+                    filters=[("order_id", f"eq.{order_id}")],
+                )
+
+                # Calcular nuevos totales
+                estimated_total = sum(int(item.get("estimated_total") or 0) for item in order_items)
+                display_total = sum(
+                    int(item.get("actual_total") or item.get("estimated_total") or 0)
+                    for item in order_items
+                )
+
+                self._update(
+                    "orders",
+                    [("id", f"eq.{order_id}")],
+                    {
+                        "actual_total": display_total,
+                        "updated_at": self._now_iso(),
+                    }
+                )
+                updated_count += 1
+
+            return updated_count
+
+        except Exception:
+            # Si hay error en Supabase, simplemente no actualizar
+            return 0
+
