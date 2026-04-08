@@ -11,6 +11,8 @@
             <input type="month" name="month" value="{{ month }}">
             <button class="button ghost" type="submit">Ver mes</button>
         </form>
+        {% set month_parts = month.split('-') %}
+        <a class="button ghost" href="/cliente/factura/{{ month_parts[1] }}/{{ month_parts[0] }}/pdf">Descargar factura</a>
         <a class="button primary" href="/cliente/pedido/nuevo">Hacer pedido</a>
     </div>
 </section>
