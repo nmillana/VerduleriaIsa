@@ -702,19 +702,19 @@ class VerduleriaApp:
 
         path_parts = request.path.strip("/").split("/")
         if len(path_parts) < 2 or not path_parts[2].isdigit():
-            return Response(b'{"error": "Pedido no válido"}', status="400 BAD REQUEST", headers=[("Content-Type", "application/json")])
+            return Response('{"error": "Pedido no valido"}'.encode(), status="400 BAD REQUEST", headers=[("Content-Type", "application/json")])
 
         order_id = int(path_parts[2])
         order = self.db.get_order(order_id)
 
         if not order:
-            return Response(b'{"error": "Pedido no encontrado"}', status="404 NOT FOUND", headers=[("Content-Type", "application/json")])
+            return Response('{"error": "Pedido no encontrado"}'.encode(), status="404 NOT FOUND", headers=[("Content-Type", "application/json")])
 
         # Obtener número de teléfono del cliente
         client_phone = order.get("client_phone", "")
         if not is_valid_phone(client_phone):
             return Response(
-                b'{"error": "Número de teléfono no válido"}',
+                '{"error": "Numero de telefono no valido"}'.encode(),
                 status="400 BAD REQUEST",
                 headers=[("Content-Type", "application/json")],
             )

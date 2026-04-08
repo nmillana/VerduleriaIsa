@@ -6,7 +6,10 @@
       "Bash(git commit -m 'Implementar Fase 0, 1 y crear módulos PDF y WhatsApp:*)",
       "Bash(git commit -m 'Implementar rutas API para PDFs y WhatsApp:*)",
       "Bash(git commit -m 'Actualizar templates con botones PDF, factura y WhatsApp:*)",
-      "Bash(git commit -m 'Implementar Fase 6: Consolidado semanal + Excel export:*)"
+      "Bash(git commit -m 'Implementar Fase 6: Consolidado semanal + Excel export:*)",
+      "mcp__Claude_Preview__preview_start",
+      "Bash(curl -v http://localhost:8000/)",
+      "Bash(git commit -m 'Arreglar sintaxis en web.py y agregar .env para SQLite local:*)"
     ]
   }
 }
