@@ -16,8 +16,10 @@ from verduleria.cache import get_grouped_products, invalidate_products_cache
 from verduleria.catalog_meta import CATEGORY_CHOICES, DELIVERY_FEE, category_label
 from verduleria.database import Database
 from verduleria.env import load_env_file
+from verduleria.pdf_generator import generate_order_pdf, generate_monthly_invoice_pdf
 from verduleria.security import hash_password, make_session_token, read_session_token, verify_password
 from verduleria.storage import create_database
+from verduleria.whatsapp_utils import generate_whatsapp_link, format_phone_international, is_valid_phone
 
 
 STATUS_LABELS = {
@@ -90,6 +92,11 @@ class VerduleriaApp:
             return self.client_order_form(request, session)
         if request.path == "/cliente/pedido/guardar" and request.method == "POST":
             return self.client_order_save(request, session)
+        # Rutas específicas de PDF (antes de ruta genérica)
+        if request.path.endswith("/pdf") and request.path.startswith("/cliente/pedido/"):
+            return self.client_order_pdf(request, session)
+        if request.path.startswith("/cliente/factura/") and request.path.endswith("/pdf"):
+            return self.client_monthly_invoice_pdf(request, session)
         if request.path.startswith("/cliente/pedido/"):
             return self.client_order_detail(request, session)
         if request.path == "/admin/setup":
@@ -102,6 +109,9 @@ class VerduleriaApp:
             return self.admin_products(request, session)
         if request.path == "/admin/pedidos":
             return self.admin_orders(request, session)
+        # Rutas específicas de admin pedidos (antes de ruta genérica)
+        if request.path.endswith("/whatsapp-link") and request.method == "POST":
+            return self.admin_order_whatsapp_link(request, session)
         if request.path.startswith("/admin/pedido/"):
             return self.admin_order_detail(request, session)
         if request.path == "/admin/clientes":
@@ -519,6 +529,121 @@ class VerduleriaApp:
                 "clients": self.db.list_clients(),
             },
             session=session,
+        )
+
+    def client_order_pdf(self, request: Request, session: dict | None) -> Response:
+        """Descargar PDF de un pedido individual."""
+        client = self.require_client(session)
+        if not client:
+            return redirect("/login-cliente?notice=Debes%20ingresar")
+
+        path_parts = request.path.strip("/").split("/")
+        if len(path_parts) < 3 or not path_parts[2].isdigit():
+            return self.render("not_found.html", {"title": "No encontrado"}, status="404 NOT FOUND", session=session)
+
+        order_id = int(path_parts[2])
+        order = self.db.get_client_order(order_id, client["id"])
+        if not order:
+            return self.render("not_found.html", {"title": "Pedido no encontrado"}, status="404 NOT FOUND", session=session)
+
+        try:
+            pdf_bytes = generate_order_pdf(order)
+            return Response(
+                body=pdf_bytes,
+                status="200 OK",
+                headers=[
+                    ("Content-Type", "application/pdf"),
+                    ("Content-Disposition", f'attachment; filename="pedido_{order_id}.pdf"'),
+                ],
+            )
+        except Exception as e:
+            return self.render(
+                "not_found.html",
+                {"title": "Error generando PDF", "error": str(e)},
+                status="500 INTERNAL SERVER ERROR",
+                session=session,
+            )
+
+    def client_monthly_invoice_pdf(self, request: Request, session: dict | None) -> Response:
+        """Descargar PDF de factura mensual consolidada."""
+        client = self.require_client(session)
+        if not client:
+            return redirect("/login-cliente?notice=Debes%20ingresar")
+
+        path_parts = request.path.strip("/").split("/")
+        if len(path_parts) < 3:
+            return self.render("not_found.html", {"title": "No encontrado"}, status="404 NOT FOUND", session=session)
+
+        try:
+            month = f"{path_parts[2]}-{path_parts[3]}"  # mes-año
+            orders = self.db.list_orders_for_client(client["id"], month=month)
+
+            if not orders:
+                return self.render(
+                    "not_found.html",
+                    {"title": "Sin pedidos en este mes"},
+                    status="404 NOT FOUND",
+                    session=session,
+                )
+
+            # Obtener tipo de pago del cliente (si existe)
+            billing_type = client.get("billing_type", "semanal")
+
+            pdf_bytes = generate_monthly_invoice_pdf(orders, billing_type)
+            return Response(
+                body=pdf_bytes,
+                status="200 OK",
+                headers=[
+                    ("Content-Type", "application/pdf"),
+                    ("Content-Disposition", f'attachment; filename="factura_{month}.pdf"'),
+                ],
+            )
+        except Exception as e:
+            return self.render(
+                "not_found.html",
+                {"title": "Error generando factura", "error": str(e)},
+                status="500 INTERNAL SERVER ERROR",
+                session=session,
+            )
+
+    def admin_order_whatsapp_link(self, request: Request, session: dict | None) -> Response:
+        """Generar link de WhatsApp para enviar detalles del pedido."""
+        admin = self.require_admin(session)
+        if not admin:
+            return Response(b'{"error": "No autorizado"}', status="401 UNAUTHORIZED", headers=[("Content-Type", "application/json")])
+
+        path_parts = request.path.strip("/").split("/")
+        if len(path_parts) < 2 or not path_parts[2].isdigit():
+            return Response(b'{"error": "Pedido no válido"}', status="400 BAD REQUEST", headers=[("Content-Type", "application/json")])
+
+        order_id = int(path_parts[2])
+        order = self.db.get_order(order_id)
+
+        if not order:
+            return Response(b'{"error": "Pedido no encontrado"}', status="404 NOT FOUND", headers=[("Content-Type", "application/json")])
+
+        # Obtener número de teléfono del cliente
+        client_phone = order.get("client_phone", "")
+        if not is_valid_phone(client_phone):
+            return Response(
+                b'{"error": "Número de teléfono no válido"}',
+                status="400 BAD REQUEST",
+                headers=[("Content-Type", "application/json")],
+            )
+
+        # Formatear teléfono a formato internacional
+        phone_intl = format_phone_international(client_phone)
+
+        # URL del PDF
+        pdf_url = f"https://verduleriaisa.onrender.com/cliente/pedido/{order_id}/pdf"
+
+        # Generar link de WhatsApp
+        whatsapp_link = generate_whatsapp_link(phone_intl, order_id, pdf_url)
+
+        return Response(
+            f'{{"whatsapp_link": "{whatsapp_link}"}}'.encode("utf-8"),
+            status="200 OK",
+            headers=[("Content-Type", "application/json")],
         )
 
     def render(
