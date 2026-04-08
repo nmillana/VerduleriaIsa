@@ -5,7 +5,8 @@
       "Bash(git add:*)",
       "Bash(git commit -m 'Implementar Fase 0, 1 y crear módulos PDF y WhatsApp:*)",
       "Bash(git commit -m 'Implementar rutas API para PDFs y WhatsApp:*)",
-      "Bash(git commit -m 'Actualizar templates con botones PDF, factura y WhatsApp:*)"
+      "Bash(git commit -m 'Actualizar templates con botones PDF, factura y WhatsApp:*)",
+      "Bash(git commit -m 'Implementar Fase 6: Consolidado semanal + Excel export:*)"
     ]
   }
 }

@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="section-head">
+    <div>
+        <p class="eyebrow">Operaciones</p>
+        <h1>Consolidado de Compras</h1>
+        <p class="muted">Agregado de todos los pedidos por semana para lista de compra</p>
+    </div>
+    <div class="hero-actions">
+        <form method="get" action="/admin/consolidado" class="month-filter">
+            <input type="month" name="month" value="{{ month }}">
+            <button class="button ghost" type="submit">Filtrar mes</button>
+        </form>
+        <button class="button primary" onclick="exportarExcel()">📊 Exportar a Excel</button>
+        <a class="button ghost" href="/admin/dashboard">Volver</a>
+    </div>
+</section>
+
+{% if consolidation %}
+<section class="panel">
+    <h2>Resumen por semana</h2>
+
+    {% for week_label, products in consolidation.items() %}
+    <details class="week-card" {% if loop.first %}open{% endif %}>
+        <summary>
+            <div>
+                <strong>{{ week_label }}</strong>
+            </div>
+            <strong>
+                {% set week_total = products.values()|map(attribute='total')|sum %}
+                {{ week_total|currency }}
+            </strong>
+        </summary>
+
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Producto</th>
+                    <th>Cantidad Total</th>
+                    <th>Precio Unitario</th>
+                    <th>Total</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for product_name, data in products.items()|sort(attribute='0') %}
+                <tr>
+                    <td>{{ product_name }}</td>
+                    <td>{{ "%.2f"|format(data.cantidad)|replace('.00', '') }}</td>
+                    <td>{{ data.precio_unitario|currency }}</td>
+                    <td>{{ data.total|currency }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </details>
+    {% endfor %}
+</section>
+
+{% else %}
+<section class="panel">
+    <p class="muted">No hay pedidos en este período.</p>
+</section>
+{% endif %}
+
+<script>
+function exportarExcel() {
+    const month = document.querySelector('input[name="month"]').value;
+    if (!month) {
+        alert('Por favor selecciona un mes');
+        return;
+    }
+
+    // Redirigir a endpoint de exportación
+    window.location.href = `/admin/consolidado/exportar?month=${month}`;
+}
+</script>
+{% endblock %}

@@ -16,6 +16,7 @@ from verduleria.cache import get_grouped_products, invalidate_products_cache
 from verduleria.catalog_meta import CATEGORY_CHOICES, DELIVERY_FEE, category_label
 from verduleria.database import Database
 from verduleria.env import load_env_file
+from verduleria.export import export_weekly_consolidation_to_excel
 from verduleria.pdf_generator import generate_order_pdf, generate_monthly_invoice_pdf
 from verduleria.security import hash_password, make_session_token, read_session_token, verify_password
 from verduleria.storage import create_database
@@ -107,6 +108,10 @@ class VerduleriaApp:
             return self.admin_dashboard(request, session)
         if request.path == "/admin/productos":
             return self.admin_products(request, session)
+        if request.path == "/admin/consolidado":
+            return self.admin_consolidation(request, session)
+        if request.path == "/admin/consolidado/exportar":
+            return self.admin_consolidation_export(request, session)
         if request.path == "/admin/pedidos":
             return self.admin_orders(request, session)
         # Rutas específicas de admin pedidos (antes de ruta genérica)
@@ -475,6 +480,89 @@ class VerduleriaApp:
             },
             session=session,
         )
+
+    def admin_consolidation(self, request: Request, session: dict | None) -> Response:
+        """Vista de consolidado semanal de todos los pedidos."""
+        admin = self.require_admin(session)
+        if not admin:
+            return redirect("/admin/login?notice=Debes%20ingresar")
+
+        month = query_value(request, "month") or current_month()
+        year, month_num = month.split("-")
+
+        # Calcular rango de fechas del mes
+        from datetime import datetime, timedelta
+        first_day = datetime(int(year), int(month_num), 1)
+        if int(month_num) == 12:
+            last_day = datetime(int(year) + 1, 1, 1) - timedelta(days=1)
+        else:
+            last_day = datetime(int(year), int(month_num) + 1, 1) - timedelta(days=1)
+
+        consolidation = self.db.consolidate_orders_by_week(
+            first_day.strftime("%Y-%m-%d"),
+            last_day.strftime("%Y-%m-%d"),
+        )
+
+        return self.render(
+            "admin_consolidation.html",
+            {
+                "title": "Consolidado de Compras",
+                "admin": admin,
+                "consolidation": consolidation,
+                "month": month,
+                "notice": query_value(request, "notice"),
+            },
+            session=session,
+        )
+
+    def admin_consolidation_export(self, request: Request, session: dict | None) -> Response:
+        """Exportar consolidado semanal a Excel."""
+        admin = self.require_admin(session)
+        if not admin:
+            return Response(b'{"error": "No autorizado"}', status="401 UNAUTHORIZED", headers=[("Content-Type", "application/json")])
+
+        month = query_value(request, "month") or current_month()
+        year, month_num = month.split("-")
+
+        # Calcular rango de fechas del mes
+        from datetime import datetime, timedelta
+        first_day = datetime(int(year), int(month_num), 1)
+        if int(month_num) == 12:
+            last_day = datetime(int(year) + 1, 1, 1) - timedelta(days=1)
+        else:
+            last_day = datetime(int(year), int(month_num) + 1, 1) - timedelta(days=1)
+
+        try:
+            consolidation = self.db.consolidate_orders_by_week(
+                first_day.strftime("%Y-%m-%d"),
+                last_day.strftime("%Y-%m-%d"),
+            )
+
+            if not consolidation:
+                return self.render(
+                    "not_found.html",
+                    {"title": "Sin datos para exportar"},
+                    status="404 NOT FOUND",
+                    session=session,
+                )
+
+            excel_bytes = export_weekly_consolidation_to_excel(consolidation)
+
+            return Response(
+                body=excel_bytes,
+                status="200 OK",
+                headers=[
+                    ("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
+                    ("Content-Disposition", f'attachment; filename="consolidado_{month}.xlsx"'),
+                ],
+            )
+        except Exception as e:
+            return self.render(
+                "not_found.html",
+                {"title": "Error exportando", "error": str(e)},
+                status="500 INTERNAL SERVER ERROR",
+                session=session,
+            )
 
     def admin_order_detail(self, request: Request, session: dict | None) -> Response:
         admin = self.require_admin(session)
