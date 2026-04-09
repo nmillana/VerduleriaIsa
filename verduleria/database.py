@@ -268,6 +268,15 @@ class Database:
             groups.setdefault(product["category"], []).append(product)
         return groups
 
+    def get_product(self, product_id: int) -> dict | None:
+        """Obtener un producto por su ID."""
+        with self.connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM products WHERE id = ?",
+                (product_id,)
+            ).fetchone()
+        return dict(row) if row else None
+
     def save_product(
         self,
         product_id: int | None,

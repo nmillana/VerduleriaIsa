@@ -106,6 +106,10 @@ class VerduleriaApp:
             return self.admin_login(request, session)
         if request.path == "/admin/dashboard":
             return self.admin_dashboard(request, session)
+        if request.path == "/admin/productos/actualizar-precios":
+            return self.admin_update_prices_batch(request, session)
+        if request.path == "/admin/productos/actualizar-precios-lote" and request.method == "POST":
+            return self.admin_update_prices_batch_save(request, session)
         if request.path == "/admin/productos":
             return self.admin_products(request, session)
         if request.path == "/admin/consolidado":
@@ -457,6 +461,96 @@ class VerduleriaApp:
                 "notice": query_value(request, "notice"),
             },
             session=session,
+        )
+
+    def admin_update_prices_batch(self, request: Request, session: dict | None) -> Response:
+        admin = self.require_admin(session)
+        if not admin:
+            return redirect("/admin/login?notice=Debes%20ingresar")
+
+        # Obtener parámetro para filtrar por activos
+        active_only = query_value(request, "active_only", "true") == "true"
+        products = self.db.list_products(active_only=active_only)
+
+        return self.render(
+            "admin_update_prices_batch.html",
+            {
+                "title": "Actualizar Precios",
+                "admin": admin,
+                "products": products,
+                "active_only": active_only,
+                "notice": query_value(request, "notice"),
+            },
+            session=session,
+        )
+
+    def admin_update_prices_batch_save(self, request: Request, session: dict | None) -> Response:
+        admin = self.require_admin(session)
+        if not admin:
+            return redirect("/admin/login?notice=Debes%20ingresar")
+
+        import json
+        try:
+            body = request.form.get("data", ["{}"])[0]
+            data = json.loads(body) if isinstance(body, str) else body
+            updates = data.get("updates", [])
+        except (json.JSONDecodeError, KeyError, TypeError):
+            return Response(
+                json.dumps({"success": False, "error": "Datos inválidos"}).encode(),
+                headers=[("Content-Type", "application/json")],
+            )
+
+        results = {
+            "updated": 0,
+            "errors": [],
+            "skipped": 0,
+        }
+
+        for update in updates:
+            try:
+                product_id = int(update.get("id"))
+                new_price_raw = update.get("price")
+                is_active = update.get("active", True)
+
+                if not new_price_raw:
+                    results["skipped"] += 1
+                    continue
+
+                new_price = int(float(new_price_raw))
+
+                # Obtener producto actual para saber qué cambió
+                current_product = self.db.get_product(product_id)
+                if not current_product:
+                    results["errors"].append(f"Producto {product_id} no encontrado")
+                    continue
+
+                # Guardar el producto
+                self.db.save_product(
+                    product_id,
+                    current_product["name"],
+                    current_product["category"],
+                    new_price,
+                    is_active,
+                )
+
+                # Recalcular pedidos pendientes solo si el precio cambió
+                if new_price != current_product.get("estimated_price"):
+                    self.db.update_pending_orders_with_new_price(product_id, new_price)
+
+                results["updated"] += 1
+            except (ValueError, TypeError) as e:
+                results["errors"].append(f"Error en producto {update.get('id', '?')}: {str(e)}")
+
+        # Invalidar caché una sola vez al final
+        invalidate_products_cache()
+
+        return Response(
+            json.dumps({
+                "success": True,
+                "results": results,
+                "message": f"Actualización completada: {results['updated']} productos actualizados",
+            }).encode(),
+            headers=[("Content-Type", "application/json")],
         )
 
     def admin_orders(self, request: Request, session: dict | None) -> Response:
