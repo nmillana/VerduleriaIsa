@@ -136,6 +136,15 @@ class SupabaseDatabase:
             groups.setdefault(product["category"], []).append(product)
         return groups
 
+    def get_product(self, product_id: int) -> dict | None:
+        """Obtener un producto por su ID."""
+        response = self._query(
+            "products",
+            filters=[("id", f"eq.{product_id}")],
+            limit=1,
+        )
+        return response[0] if response else None
+
     def save_product(
         self,
         product_id: int | None,

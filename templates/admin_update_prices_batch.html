@@ -1,0 +1,245 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container">
+    <h1>{{ title }}</h1>
+
+    {% if notice %}
+        <div class="alert alert-success">{{ notice }}</div>
+    {% endif %}
+
+    <!-- Filtro de productos -->
+    <section class="panel">
+        <h2>Filtro</h2>
+        <form method="get" class="inline-form">
+            <label>
+                <input type="checkbox" name="active_only" value="true" {% if active_only %}checked{% endif %} onchange="this.form.submit()">
+                Mostrar solo productos activos
+            </label>
+        </form>
+    </section>
+
+    <!-- Tabla editable -->
+    <section class="panel">
+        <h2>Actualizar Precios</h2>
+        <form id="pricesForm" class="table-stack">
+            <div class="table-header" style="display: grid; grid-template-columns: 2fr 1fr 1fr 1fr auto; gap: 10px; padding: 10px; font-weight: bold; border-bottom: 2px solid #ddd;">
+                <div>Producto</div>
+                <div>Precio Actual</div>
+                <div>Nuevo Precio</div>
+                <div>Activo</div>
+            </div>
+
+            {% if products %}
+                {% for product in products %}
+                    <div class="table-form-row" data-product-id="{{ product.id }}" style="display: grid; grid-template-columns: 2fr 1fr 1fr 1fr auto; gap: 10px; align-items: center; padding: 10px; border-bottom: 1px solid #eee;">
+                        <div>
+                            <input type="hidden" name="products[{{ loop.index0 }}][id]" value="{{ product.id }}">
+                            <span>{{ product.name }}</span>
+                        </div>
+                        <div>
+                            <input type="text" value="${ product.estimated_price | currency }}" readonly style="background-color: #f5f5f5; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+                        </div>
+                        <div>
+                            <input type="number"
+                                   name="products[{{ loop.index0 }}][price]"
+                                   class="price-input"
+                                   value="{{ product.estimated_price }}"
+                                   min="0"
+                                   step="1"
+                                   placeholder="Nuevo precio"
+                                   style="padding: 8px; border: 1px solid #ddd; border-radius: 4px; width: 100%;">
+                        </div>
+                        <div>
+                            <select name="products[{{ loop.index0 }}][active]" class="active-select" style="padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+                                <option value="true" {% if product.is_active %}selected{% endif %}>Activo</option>
+                                <option value="false" {% if not product.is_active %}selected{% endif %}>Inactivo</option>
+                            </select>
+                        </div>
+                    </div>
+                {% endfor %}
+            {% else %}
+                <div style="padding: 20px; text-align: center; color: #999;">
+                    No hay productos para mostrar
+                </div>
+            {% endif %}
+        </form>
+
+        {% if products %}
+            <div style="margin-top: 20px; padding: 15px; background-color: #f9f9f9; border-radius: 4px;">
+                <button type="button" id="saveBtn" class="button primary" onclick="guardarPrecios()">
+                    Guardar todos los precios
+                </button>
+                <button type="button" class="button secondary" onclick="limpiarCambios()">
+                    Limpiar cambios
+                </button>
+                <div id="resultados" style="margin-top: 15px; display: none;"></div>
+            </div>
+        {% endif %}
+    </section>
+
+    <!-- Link de vuelta -->
+    <div style="margin-top: 20px;">
+        <a href="/admin/productos" class="button ghost">Volver a productos</a>
+    </div>
+</div>
+
+<style>
+    .table-header {
+        background-color: #f5f5f5;
+    }
+
+    .table-form-row {
+        transition: background-color 0.2s;
+    }
+
+    .table-form-row:hover {
+        background-color: #fafafa;
+    }
+
+    .price-input {
+        font-family: monospace;
+    }
+
+    .alert {
+        padding: 15px;
+        border-radius: 4px;
+        margin-bottom: 20px;
+    }
+
+    .alert-success {
+        background-color: #d4edda;
+        border: 1px solid #c3e6cb;
+        color: #155724;
+    }
+
+    .alert-error {
+        background-color: #f8d7da;
+        border: 1px solid #f5c6cb;
+        color: #721c24;
+    }
+
+    .inline-form {
+        display: flex;
+        align-items: center;
+        gap: 15px;
+    }
+
+    .inline-form label {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin: 0;
+    }
+
+    .inline-form input[type="checkbox"] {
+        margin: 0;
+    }
+</style>
+
+<script>
+    function guardarPrecios() {
+        const form = document.getElementById('pricesForm');
+        const rows = form.querySelectorAll('.table-form-row');
+
+        const updates = [];
+        let hasChanges = false;
+
+        rows.forEach(row => {
+            const productId = row.dataset.productId;
+            const priceInput = row.querySelector('.price-input');
+            const activeSelect = row.querySelector('.active-select');
+
+            const newPrice = priceInput.value.trim();
+            const isActive = activeSelect.value === 'true';
+
+            if (newPrice) {
+                updates.push({
+                    id: parseInt(productId),
+                    price: parseFloat(newPrice),
+                    active: isActive,
+                });
+                hasChanges = true;
+            }
+        });
+
+        if (!hasChanges) {
+            alert('Por favor ingresa al menos un nuevo precio');
+            return;
+        }
+
+        // Confirmación
+        const confirmMsg = `¿Estás seguro de que deseas actualizar ${updates.length} producto(s)?`;
+        if (!confirm(confirmMsg)) {
+            return;
+        }
+
+        // Mostrar estado de carga
+        const saveBtn = document.getElementById('saveBtn');
+        const resultados = document.getElementById('resultados');
+        saveBtn.disabled = true;
+        saveBtn.textContent = 'Guardando...';
+
+        // Enviar datos
+        const data = {
+            updates: updates
+        };
+
+        fetch('/admin/productos/actualizar-precios-lote', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+            },
+            body: 'data=' + encodeURIComponent(JSON.stringify(data))
+        })
+        .then(response => response.json())
+        .then(result => {
+            saveBtn.disabled = false;
+            saveBtn.textContent = 'Guardar todos los precios';
+
+            if (result.success) {
+                // Mostrar resultados
+                let html = '<div class="alert alert-success">';
+                html += `<strong>✓ ${result.message}</strong><br>`;
+                html += `Productos actualizados: ${result.results.updated}<br>`;
+                if (result.results.skipped > 0) {
+                    html += `Omitidos: ${result.results.skipped}<br>`;
+                }
+                html += '</div>';
+
+                if (result.results.errors.length > 0) {
+                    html += '<div class="alert alert-error">';
+                    html += '<strong>Errores:</strong><br>';
+                    result.results.errors.forEach(err => {
+                        html += `• ${err}<br>`;
+                    });
+                    html += '</div>';
+                }
+
+                resultados.innerHTML = html;
+                resultados.style.display = 'block';
+
+                // Recargar después de 2 segundos
+                setTimeout(() => {
+                    window.location.href = '/admin/productos/actualizar-precios?notice=Precios%20actualizados%20correctamente';
+                }, 2000);
+            } else {
+                resultados.innerHTML = `<div class="alert alert-error"><strong>Error:</strong> ${result.error}</div>`;
+                resultados.style.display = 'block';
+            }
+        })
+        .catch(error => {
+            saveBtn.disabled = false;
+            saveBtn.textContent = 'Guardar todos los precios';
+            resultados.innerHTML = `<div class="alert alert-error"><strong>Error de conexión:</strong> ${error.message}</div>`;
+            resultados.style.display = 'block';
+        });
+    }
+
+    function limpiarCambios() {
+        if (confirm('¿Descartar todos los cambios?')) {
+            window.location.href = '/admin/productos/actualizar-precios';
+        }
+    }
+</script>
+{% endblock %}
