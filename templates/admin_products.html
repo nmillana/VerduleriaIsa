@@ -36,26 +36,272 @@
     </form>
 </section>
 
+<!-- Tabs/Toggle -->
 <section class="panel">
-    <h2>Editar productos actuales</h2>
-    <div class="table-stack">
-        {% for product in products %}
-            <form method="post" class="table-form-row">
-                <input type="hidden" name="product_id" value="{{ product.id }}">
-                <input type="text" name="name" value="{{ product.name }}" required>
-                <select name="category">
-                    {% for value, label in category_choices %}
-                        <option value="{{ value }}" {% if product.category == value %}selected{% endif %}>{{ label }}</option>
-                    {% endfor %}
-                </select>
-                <input type="number" name="estimated_price" min="0" value="{{ product.estimated_price }}" required>
-                <select name="is_active">
-                    <option value="1" {% if product.is_active %}selected{% endif %}>Activo</option>
-                    <option value="0" {% if not product.is_active %}selected{% endif %}>Inactivo</option>
-                </select>
-                <button class="button ghost" type="submit">Guardar</button>
-            </form>
-        {% endfor %}
+    <div style="display: flex; gap: 10px; margin-bottom: 20px; border-bottom: 2px solid #eee;">
+        <button class="tab-button active" onclick="mostrarVistaIndividual()" style="padding: 10px 20px; border: none; background: none; cursor: pointer; border-bottom: 3px solid #4CAF50; font-weight: bold;">
+            Edición Individual
+        </button>
+        <button class="tab-button" onclick="mostrarVistaLote()" style="padding: 10px 20px; border: none; background: none; cursor: pointer; border-bottom: 3px solid transparent; font-weight: bold; color: #999;">
+            Edición en Lote
+        </button>
+    </div>
+
+    <!-- Vista Individual -->
+    <div id="vistaIndividual">
+        <h2>Editar productos actuales (uno por uno)</h2>
+        <div class="table-stack">
+            {% for product in products %}
+                <form method="post" class="table-form-row">
+                    <input type="hidden" name="product_id" value="{{ product.id }}">
+                    <input type="text" name="name" value="{{ product.name }}" required>
+                    <select name="category">
+                        {% for value, label in category_choices %}
+                            <option value="{{ value }}" {% if product.category == value %}selected{% endif %}>{{ label }}</option>
+                        {% endfor %}
+                    </select>
+                    <input type="number" name="estimated_price" min="0" value="{{ product.estimated_price }}" required>
+                    <select name="is_active">
+                        <option value="1" {% if product.is_active %}selected{% endif %}>Activo</option>
+                        <option value="0" {% if not product.is_active %}selected{% endif %}>Inactivo</option>
+                    </select>
+                    <button class="button ghost" type="submit">Guardar</button>
+                </form>
+            {% endfor %}
+        </div>
+    </div>
+
+    <!-- Vista en Lote -->
+    <div id="vistaLote" style="display: none;">
+        <h2>Actualizar múltiples productos</h2>
+
+        <!-- Filtro -->
+        <div style="margin-bottom: 20px; padding: 15px; background-color: #f9f9f9; border-radius: 4px;">
+            <label style="display: flex; align-items: center; gap: 10px; margin-bottom: 15px;">
+                <input type="checkbox" id="soloActivos" checked onchange="filtrarProductos()">
+                <span>Mostrar solo productos activos</span>
+            </label>
+        </div>
+
+        <!-- Tabla editable -->
+        <form id="formLote">
+            <div style="overflow-x: auto;">
+                <table style="width: 100%; border-collapse: collapse;">
+                    <thead>
+                        <tr style="background-color: #f5f5f5; border-bottom: 2px solid #ddd;">
+                            <th style="padding: 12px; text-align: left; font-weight: bold;">Producto</th>
+                            <th style="padding: 12px; text-align: right; font-weight: bold;">Precio Actual</th>
+                            <th style="padding: 12px; text-align: right; font-weight: bold;">Nuevo Precio</th>
+                            <th style="padding: 12px; text-align: center; font-weight: bold;">Activo</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tablaProductos">
+                        {% for product in products %}
+                            <tr class="fila-producto" data-product-id="{{ product.id }}" data-active="{{ product.is_active | int }}" style="border-bottom: 1px solid #eee;">
+                                <td style="padding: 12px; font-weight: 500;">{{ product.name }}</td>
+                                <td style="padding: 12px; text-align: right; color: #666;">
+                                    ${{ product.estimated_price | currency }}
+                                </td>
+                                <td style="padding: 12px;">
+                                    <input type="number"
+                                           class="precio-nuevo"
+                                           data-product-id="{{ product.id }}"
+                                           value="{{ product.estimated_price }}"
+                                           min="0"
+                                           step="1"
+                                           style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; font-family: monospace;">
+                                </td>
+                                <td style="padding: 12px; text-align: center;">
+                                    <select class="estado-producto"
+                                            data-product-id="{{ product.id }}"
+                                            style="padding: 6px; border: 1px solid #ddd; border-radius: 4px;">
+                                        <option value="1" {% if product.is_active %}selected{% endif %}>Activo</option>
+                                        <option value="0" {% if not product.is_active %}selected{% endif %}>Inactivo</option>
+                                    </select>
+                                </td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Botones de acción -->
+            <div style="margin-top: 20px; display: flex; gap: 10px;">
+                <button type="button" onclick="guardarTodos()" class="button primary">
+                    Guardar todos los precios
+                </button>
+                <button type="button" onclick="limpiarCambios()" class="button secondary">
+                    Limpiar cambios
+                </button>
+            </div>
+
+            <!-- Resultados -->
+            <div id="resultados" style="margin-top: 20px; display: none;"></div>
+        </form>
     </div>
 </section>
+
+<style>
+    .tab-button:hover {
+        color: #333;
+    }
+
+    .tab-button.active {
+        border-bottom-color: #4CAF50;
+        color: #333;
+    }
+
+    .fila-producto:hover {
+        background-color: #fafafa;
+    }
+
+    input[type="number"]:focus,
+    select:focus {
+        outline: none;
+        border-color: #4CAF50;
+        box-shadow: 0 0 4px rgba(76, 175, 80, 0.2);
+    }
+</style>
+
+<script>
+    let preciosOriginales = {};
+
+    // Inicializar precios originales
+    document.querySelectorAll('.precio-nuevo').forEach(input => {
+        preciosOriginales[input.dataset.productId] = input.value;
+    });
+
+    function mostrarVistaIndividual() {
+        document.getElementById('vistaIndividual').style.display = 'block';
+        document.getElementById('vistaLote').style.display = 'none';
+        document.querySelectorAll('.tab-button')[0].classList.add('active');
+        document.querySelectorAll('.tab-button')[1].classList.remove('active');
+        document.querySelectorAll('.tab-button')[0].style.borderBottomColor = '#4CAF50';
+        document.querySelectorAll('.tab-button')[1].style.borderBottomColor = 'transparent';
+    }
+
+    function mostrarVistaLote() {
+        document.getElementById('vistaIndividual').style.display = 'none';
+        document.getElementById('vistaLote').style.display = 'block';
+        document.querySelectorAll('.tab-button')[0].classList.remove('active');
+        document.querySelectorAll('.tab-button')[1].classList.add('active');
+        document.querySelectorAll('.tab-button')[0].style.borderBottomColor = 'transparent';
+        document.querySelectorAll('.tab-button')[1].style.borderBottomColor = '#4CAF50';
+    }
+
+    function filtrarProductos() {
+        const soloActivos = document.getElementById('soloActivos').checked;
+        document.querySelectorAll('.fila-producto').forEach(fila => {
+            const isActive = parseInt(fila.dataset.active) === 1;
+            if (soloActivos && !isActive) {
+                fila.style.display = 'none';
+            } else {
+                fila.style.display = '';
+            }
+        });
+    }
+
+    function limpiarCambios() {
+        if (confirm('¿Descartar todos los cambios?')) {
+            document.querySelectorAll('.precio-nuevo').forEach(input => {
+                input.value = preciosOriginales[input.dataset.productId];
+            });
+            document.getElementById('resultados').style.display = 'none';
+        }
+    }
+
+    function guardarTodos() {
+        const updates = [];
+        let hasChanges = false;
+
+        document.querySelectorAll('.fila-producto').forEach(fila => {
+            const productId = parseInt(fila.dataset.productId);
+            const precioInput = fila.querySelector('.precio-nuevo');
+            const estadoSelect = fila.querySelector('.estado-producto');
+
+            const newPrice = precioInput.value.trim();
+            const isActive = parseInt(estadoSelect.value) === 1;
+
+            if (newPrice && (newPrice !== preciosOriginales[productId] || fila.dataset.active !== estadoSelect.value)) {
+                updates.push({
+                    id: productId,
+                    price: parseFloat(newPrice),
+                    active: isActive,
+                });
+                hasChanges = true;
+            }
+        });
+
+        if (!hasChanges) {
+            alert('No hay cambios para guardar');
+            return;
+        }
+
+        if (!confirm(`¿Guardar ${updates.length} cambio(s)?`)) {
+            return;
+        }
+
+        // Estado de carga
+        const btn = event.target;
+        const textOriginal = btn.textContent;
+        btn.disabled = true;
+        btn.textContent = 'Guardando...';
+
+        const data = { updates: updates };
+
+        fetch('/admin/productos/actualizar-precios-lote', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: 'data=' + encodeURIComponent(JSON.stringify(data))
+        })
+        .then(response => response.json())
+        .then(result => {
+            btn.disabled = false;
+            btn.textContent = textOriginal;
+
+            if (result.success) {
+                let html = '<div style="background-color: #d4edda; border: 1px solid #c3e6cb; color: #155724; padding: 15px; border-radius: 4px;">';
+                html += `<strong>✓ ${result.message}</strong><br>`;
+                html += `Productos actualizados: ${result.results.updated}`;
+                if (result.results.errors.length > 0) {
+                    html += '<br><strong style="margin-top: 10px; display: block;">Errores:</strong>';
+                    result.results.errors.forEach(err => {
+                        html += `<br>• ${err}`;
+                    });
+                }
+                html += '</div>';
+
+                document.getElementById('resultados').innerHTML = html;
+                document.getElementById('resultados').style.display = 'block';
+
+                // Actualizar precios originales
+                updates.forEach(update => {
+                    preciosOriginales[update.id] = update.price;
+                });
+
+                // Recargar después de 2 segundos
+                setTimeout(() => {
+                    location.reload();
+                }, 2000);
+            } else {
+                document.getElementById('resultados').innerHTML = `
+                    <div style="background-color: #f8d7da; border: 1px solid #f5c6cb; color: #721c24; padding: 15px; border-radius: 4px;">
+                        <strong>Error:</strong> ${result.error}
+                    </div>
+                `;
+                document.getElementById('resultados').style.display = 'block';
+            }
+        })
+        .catch(error => {
+            btn.disabled = false;
+            btn.textContent = textOriginal;
+            document.getElementById('resultados').innerHTML = `
+                <div style="background-color: #f8d7da; border: 1px solid #f5c6cb; color: #721c24; padding: 15px; border-radius: 4px;">
+                    <strong>Error de conexión:</strong> ${error.message}
+                </div>
+            `;
+            document.getElementById('resultados').style.display = 'block';
+        });
+    }
+</script>
 {% endblock %}

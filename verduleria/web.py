@@ -491,12 +491,14 @@ class VerduleriaApp:
 
         import json
         try:
-            body = request.form.get("data", ["{}"])[0]
-            data = json.loads(body) if isinstance(body, str) else body
+            body = request.form.get("data", "{}")
+            if isinstance(body, list):
+                body = body[0]
+            data = json.loads(body)
             updates = data.get("updates", [])
-        except (json.JSONDecodeError, KeyError, TypeError):
+        except (json.JSONDecodeError, KeyError, TypeError, ValueError) as e:
             return Response(
-                json.dumps({"success": False, "error": "Datos inválidos"}).encode(),
+                json.dumps({"success": False, "error": f"Datos inválidos: {str(e)}"}).encode(),
                 headers=[("Content-Type", "application/json")],
             )
 

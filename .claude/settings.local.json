@@ -9,7 +9,22 @@
       "Bash(git commit -m 'Implementar Fase 6: Consolidado semanal + Excel export:*)",
       "mcp__Claude_Preview__preview_start",
       "Bash(curl -v http://localhost:8000/)",
-      "Bash(git commit -m 'Arreglar sintaxis en web.py y agregar .env para SQLite local:*)"
+      "Bash(git commit -m 'Arreglar sintaxis en web.py y agregar .env para SQLite local:*)",
+      "Bash(curl -s http://localhost:8000/)",
+      "Bash(netstat -tlnp)",
+      "Bash(timeout 5 python app.py)",
+      "Bash(python -c \"from verduleria.web import create_application; print\\('✓ Imports OK'\\)\")",
+      "Bash(python -c \"from verduleria.web import create_application; print\\('OK'\\)\")",
+      "Bash(python -c \"from verduleria.web import create_application; app = create_application\\(\\); print\\('App created'\\)\")",
+      "Bash(gh pr create --title 'Implementar 6 fases de mejoras: PDFs, WhatsApp, Consolidado y Rendimiento' --body ':*)",
+      "Bash(git push:*)",
+      "Read(//tmp/**)",
+      "Bash(git checkout:*)",
+      "Bash(git pull:*)",
+      "Bash(git merge:*)",
+      "Bash(bash /tmp/create_pr.sh)",
+      "Bash(git commit -m 'Implementar actualización en lote de precios con filtrado por activo/inactivo:*)",
+      "Bash(git commit -m 'Rediseñar actualización de precios inline sin página separada:*)"
     ]
   }
 }
