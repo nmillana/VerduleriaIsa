@@ -491,42 +491,34 @@ class VerduleriaApp:
 
         import json
         try:
-            body = request.form.get("data", "{}")
-            if isinstance(body, list):
-                body = body[0]
-            data = json.loads(body)
+            data_str = form_value(request, "data", "{}")
+            data = json.loads(data_str)
             updates = data.get("updates", [])
         except (json.JSONDecodeError, KeyError, TypeError, ValueError) as e:
             return Response(
-                json.dumps({"success": False, "error": f"Datos inválidos: {str(e)}"}).encode(),
+                json.dumps({"success": False, "error": "Datos invalidos"}).encode(),
                 headers=[("Content-Type", "application/json")],
             )
 
-        results = {
-            "updated": 0,
-            "errors": [],
-            "skipped": 0,
-        }
+        results = {"updated": 0, "errors": [], "skipped": 0}
 
         for update in updates:
             try:
-                product_id = int(update.get("id"))
+                product_id = int(update.get("id", 0))
                 new_price_raw = update.get("price")
                 is_active = update.get("active", True)
 
-                if not new_price_raw:
+                if not product_id or not new_price_raw:
                     results["skipped"] += 1
                     continue
 
                 new_price = int(float(new_price_raw))
-
-                # Obtener producto actual para saber qué cambió
                 current_product = self.db.get_product(product_id)
+
                 if not current_product:
-                    results["errors"].append(f"Producto {product_id} no encontrado")
+                    results["errors"].append("Producto no encontrado")
                     continue
 
-                # Guardar el producto
                 self.db.save_product(
                     product_id,
                     current_product["name"],
@@ -535,22 +527,20 @@ class VerduleriaApp:
                     is_active,
                 )
 
-                # Recalcular pedidos pendientes solo si el precio cambió
                 if new_price != current_product.get("estimated_price"):
                     self.db.update_pending_orders_with_new_price(product_id, new_price)
 
                 results["updated"] += 1
-            except (ValueError, TypeError) as e:
-                results["errors"].append(f"Error en producto {update.get('id', '?')}: {str(e)}")
+            except (ValueError, TypeError):
+                results["errors"].append("Error procesando producto")
 
-        # Invalidar caché una sola vez al final
         invalidate_products_cache()
 
         return Response(
             json.dumps({
                 "success": True,
                 "results": results,
-                "message": f"Actualización completada: {results['updated']} productos actualizados",
+                "message": f"Actualizacion: {results['updated']} productos",
             }).encode(),
             headers=[("Content-Type", "application/json")],
         )
