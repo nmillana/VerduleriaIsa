@@ -27,7 +27,12 @@
       "Bash(git commit -m 'Rediseñar actualización de precios inline sin página separada:*)",
       "Bash(python precios_actualizados.py)",
       "Bash(python3)",
-      "Bash(git commit -m 'Eliminar ruta separada, mantener funcionalidad inline en productos:*)"
+      "Bash(git commit -m 'Eliminar ruta separada, mantener funcionalidad inline en productos:*)",
+      "Bash(python3 -m py_compile verduleria/web.py)",
+      "Bash(git revert:*)",
+      "Bash(git reset:*)",
+      "Bash(git commit -m 'Corregir metodo admin_update_prices_batch_save usando form_value\\(\\):*)",
+      "Bash(git commit -m 'Update settings configuration:*)"
     ]
   }
 }
