@@ -485,16 +485,20 @@ class VerduleriaApp:
         )
 
     def admin_update_prices_batch_save(self, request: Request, session: dict | None) -> Response:
+        import json
+
         admin = self.require_admin(session)
         if not admin:
-            return redirect("/admin/login?notice=Debes%20ingresar")
+            return Response(
+                json.dumps({"success": False, "error": "No autorizado"}).encode(),
+                headers=[("Content-Type", "application/json")],
+            )
 
-        import json
         try:
             data_str = form_value(request, "data", "{}")
             data = json.loads(data_str)
             updates = data.get("updates", [])
-        except (json.JSONDecodeError, KeyError, TypeError, ValueError) as e:
+        except Exception as e:
             return Response(
                 json.dumps({"success": False, "error": "Datos invalidos"}).encode(),
                 headers=[("Content-Type", "application/json")],
@@ -502,39 +506,42 @@ class VerduleriaApp:
 
         results = {"updated": 0, "errors": [], "skipped": 0}
 
-        for update in updates:
-            try:
-                product_id = int(update.get("id", 0))
-                new_price_raw = update.get("price")
-                is_active = update.get("active", True)
+        try:
+            for update in updates:
+                try:
+                    product_id = int(update.get("id", 0))
+                    new_price_raw = update.get("price")
+                    is_active = update.get("active", True)
 
-                if not product_id or not new_price_raw:
-                    results["skipped"] += 1
-                    continue
+                    if not product_id or not new_price_raw:
+                        results["skipped"] += 1
+                        continue
 
-                new_price = int(float(new_price_raw))
-                current_product = self.db.get_product(product_id)
+                    new_price = int(float(new_price_raw))
+                    current_product = self.db.get_product(product_id)
 
-                if not current_product:
-                    results["errors"].append("Producto no encontrado")
-                    continue
+                    if not current_product:
+                        results["errors"].append("Producto no encontrado")
+                        continue
 
-                self.db.save_product(
-                    product_id,
-                    current_product["name"],
-                    current_product["category"],
-                    new_price,
-                    is_active,
-                )
+                    self.db.save_product(
+                        product_id,
+                        current_product["name"],
+                        current_product["category"],
+                        new_price,
+                        is_active,
+                    )
 
-                if new_price != current_product.get("estimated_price"):
-                    self.db.update_pending_orders_with_new_price(product_id, new_price)
+                    if new_price != current_product.get("estimated_price"):
+                        self.db.update_pending_orders_with_new_price(product_id, new_price)
 
-                results["updated"] += 1
-            except (ValueError, TypeError):
-                results["errors"].append("Error procesando producto")
+                    results["updated"] += 1
+                except Exception:
+                    results["errors"].append("Error procesando producto")
 
-        invalidate_products_cache()
+            invalidate_products_cache()
+        except Exception:
+            pass
 
         return Response(
             json.dumps({
