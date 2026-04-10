@@ -106,8 +106,6 @@ class VerduleriaApp:
             return self.admin_login(request, session)
         if request.path == "/admin/dashboard":
             return self.admin_dashboard(request, session)
-        if request.path == "/admin/productos/actualizar-precios":
-            return self.admin_update_prices_batch(request, session)
         if request.path == "/admin/productos/actualizar-precios-lote" and request.method == "POST":
             return self.admin_update_prices_batch_save(request, session)
         if request.path == "/admin/productos":
@@ -458,27 +456,6 @@ class VerduleriaApp:
                 "title": "Productos",
                 "admin": admin,
                 "products": self.db.list_products(),
-                "notice": query_value(request, "notice"),
-            },
-            session=session,
-        )
-
-    def admin_update_prices_batch(self, request: Request, session: dict | None) -> Response:
-        admin = self.require_admin(session)
-        if not admin:
-            return redirect("/admin/login?notice=Debes%20ingresar")
-
-        # Obtener parámetro para filtrar por activos
-        active_only = query_value(request, "active_only", "true") == "true"
-        products = self.db.list_products(active_only=active_only)
-
-        return self.render(
-            "admin_update_prices_batch.html",
-            {
-                "title": "Actualizar Precios",
-                "admin": admin,
-                "products": products,
-                "active_only": active_only,
                 "notice": query_value(request, "notice"),
             },
             session=session,
