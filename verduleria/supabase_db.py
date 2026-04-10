@@ -138,12 +138,10 @@ class SupabaseDatabase:
 
     def get_product(self, product_id: int) -> dict | None:
         """Obtener un producto por su ID."""
-        response = self._query(
-            "products",
-            filters=[("id", f"eq.{product_id}")],
-            limit=1,
-        )
-        return response[0] if response else None
+        rows = self._select("products", filters=[("id", f"eq.{product_id}")], limit=1)
+        if rows:
+            return self._normalize_product(rows[0])
+        return None
 
     def save_product(
         self,
