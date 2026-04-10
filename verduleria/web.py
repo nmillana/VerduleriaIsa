@@ -513,12 +513,12 @@ class VerduleriaApp:
                         self.db.update_pending_orders_with_new_price(product_id, new_price)
 
                     results["updated"] += 1
-                except Exception:
-                    results["errors"].append("Error procesando producto")
+                except Exception as e:
+                    results["errors"].append(str(e))
 
             invalidate_products_cache()
-        except Exception:
-            pass
+        except Exception as e:
+            results["errors"].append(str(e))
 
         return Response(
             json.dumps({
