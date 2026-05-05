@@ -12,7 +12,7 @@ La app puede trabajar de dos formas:
 ## Donde quedan los datos
 
 - En modo local: `data/verduleria.sqlite3`
-- En modo Supabase: `https://pmhdlrbakqpmtulpxhwi.supabase.co`
+- En modo Supabase: `https://wbpknauplyxshqpqzjvv.supabase.co`
 - Clave de sesiones local: `data/session.secret`
 - Variables privadas locales: `.env` y no se sube al repo
 
@@ -61,14 +61,40 @@ Repo objetivo:
 
 - `https://github.com/nmillana/VerduleriaIsa.git`
 
-El proyecto ya quedo preparado para despliegue desde GitHub con estos archivos:
+El backend Python ya quedó preparado para despliegue tradicional con estos archivos:
 
 - `requirements.txt`
 - `wsgi.py`
 - `render.yaml`
 - `.env.example`
 
-GitHub Pages no puede correr este backend Python porque solo sirve contenido estatico. Para publicarla como pagina web real, deja el codigo en GitHub y desplegalo en un hosting Python compatible, por ejemplo Render, usando `render.yaml`.
+Ademas, el repo ahora incluye una version estatica para GitHub Pages dentro de `docs/`.
+
+### Version GitHub Pages
+
+Esta version ya no depende del backend Flask y usa:
+
+- `Supabase Auth` para login de clientas y administracion
+- `RLS` para permisos por usuario
+- `docs/index.html` como SPA estatica
+- `docs/static/config.js` para `SUPABASE_URL` y `SUPABASE_ANON_KEY`
+- `supabase/sql/009_github_pages_auth.sql` para enlazar `auth.users` con `clients` y `admins`
+
+Pasos:
+
+1. Completa `docs/static/config.js` con tu `SUPABASE_ANON_KEY`
+2. Ejecuta `supabase/sql/009_github_pages_auth.sql` en Supabase
+3. Crea en `Authentication > Users` el usuario admin con el mismo correo que ya existe en la tabla `admins`
+4. Publica GitHub Pages apuntando a la carpeta `docs/`
+
+### Importante sobre el login
+
+- La version Flask antigua dejaba entrar a clientas solo con correo.
+- La version GitHub Pages cambia eso a `correo + contraseña`, porque en un frontend publico no se puede seguir usando la `service role key`.
+
+### Si prefieres mantener el backend
+
+GitHub Pages no ejecuta Python. Si quieres conservar la app server-side actual tal como estaba, despliegala en un hosting compatible, por ejemplo Render, usando `render.yaml`.
 
 ## Nota de seguridad
 

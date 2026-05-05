@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="utf-8">
+    <title>Redirigiendo...</title>
+</head>
+<body>
+    <script>
+        (function redirectToHashRoute() {
+            var segments = window.location.pathname.split("/").filter(Boolean);
+            var repoBase = segments.length > 0 ? "/" + segments[0] : "";
+            var appPath = "/" + segments.slice(1).join("/");
+            var query = window.location.search || "";
+            var target = repoBase + "/#" + appPath + query;
+            window.location.replace(target || repoBase + "/#/");
+        }());
+    </script>
+</body>
+</html>
