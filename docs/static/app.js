@@ -369,16 +369,20 @@ async function linkAndFetchAdmin(user) {
     }
 
     admin = await fetchSingleRow(
-        state.client.from("admins").select(fields).eq("email", email).is("auth_user_id", null)
+        state.client.from("admins").select(fields).eq("email", email)
     );
     if (!admin) {
         return null;
     }
 
-    await runQuery(
-        state.client.from("admins").update({ auth_user_id: user.id }).eq("id", admin.id).select(fields)
-    );
-    return normalizeAdmin({ ...admin, auth_user_id: user.id });
+    if (admin.auth_user_id !== user.id) {
+        const updatedRows = await runQuery(
+            state.client.from("admins").update({ auth_user_id: user.id }).eq("id", admin.id).select(fields)
+        );
+        return normalizeAdmin(updatedRows[0] || { ...admin, auth_user_id: user.id });
+    }
+
+    return normalizeAdmin(admin);
 }
 
 async function linkAndFetchClient(user) {
@@ -394,17 +398,20 @@ async function linkAndFetchClient(user) {
 
     if (email) {
         client = await fetchSingleRow(
-            state.client.from("clients").select(fields).eq("email", email).is("auth_user_id", null)
+            state.client.from("clients").select(fields).eq("email", email)
         );
         if (client) {
-            const updatedRows = await runQuery(
-                state.client
-                    .from("clients")
-                    .update({ auth_user_id: user.id })
-                    .eq("id", client.id)
-                    .select(fields)
-            );
-            return normalizeClient(updatedRows[0] || { ...client, auth_user_id: user.id });
+            if (client.auth_user_id !== user.id) {
+                const updatedRows = await runQuery(
+                    state.client
+                        .from("clients")
+                        .update({ auth_user_id: user.id })
+                        .eq("id", client.id)
+                        .select(fields)
+                );
+                return normalizeClient(updatedRows[0] || { ...client, auth_user_id: user.id });
+            }
+            return normalizeClient(client);
         }
     }
 
@@ -913,7 +920,7 @@ async function submitClientLogin(form) {
     await syncIdentity("SIGNED_IN");
     if (state.role !== "client") {
         await state.client.auth.signOut();
-        throw new Error("Tu usuario existe en Supabase Auth, pero no está ligado a una clienta.");
+        throw new Error(buildRoleLinkError("client", email));
     }
 
     state.flash = { tone: "notice", message: "Bienvenida de vuelta." };
@@ -934,9 +941,7 @@ async function submitAdminLogin(form) {
     await syncIdentity("SIGNED_IN");
     if (state.role !== "admin") {
         await state.client.auth.signOut();
-        throw new Error(
-            "Tu usuario autenticado no está ligado a una administradora. Crea el usuario en Supabase Auth con el mismo correo que ya usa la app."
-        );
+        throw new Error(buildRoleLinkError("admin", email));
     }
 
     state.flash = { tone: "notice", message: "Ingreso administrador correcto." };
@@ -1212,6 +1217,7 @@ function renderClientLoginPage() {
                 <label>Contraseña
                     <input type="password" name="password" required>
                 </label>
+                <p class="field-note">Si ya existías con este correo, la app intentará volver a enlazarte automáticamente.</p>
                 <button class="button primary" type="submit">Entrar</button>
             </form>
             <p class="muted">¿Aún no estás registrada? <a href="#/registro">Crear registro</a></p>
@@ -1223,7 +1229,7 @@ function renderAdminLoginPage() {
     return `
         <section class="form-panel narrow">
             <h1>Ingreso administrador</h1>
-            <p class="muted">Debes crear también el usuario en Supabase Auth con el mismo correo que ya figura en la tabla <code>admins</code>.</p>
+            <p class="muted">Usa el mismo correo que ya figura en la tabla <code>admins</code>. Si antes quedó ligado a otro usuario de Auth, la app intentará re-enlazarlo.</p>
             <form class="stacked-form" data-form="admin-login">
                 <label>Correo
                     <input type="email" name="email" required>
@@ -2386,6 +2392,29 @@ function decorateOrderTotals(order) {
 
 function currentAppUrl() {
     return window.location.href.split("#")[0];
+}
+
+function currentSupabaseProjectLabel() {
+    const url = String(window.VERDULERIA_CONFIG?.SUPABASE_URL || "");
+    if (!url) {
+        return "este proyecto";
+    }
+    try {
+        return new URL(url).host.replace(".supabase.co", "");
+    } catch (error) {
+        return url;
+    }
+}
+
+function buildRoleLinkError(role, email) {
+    const normalizedEmail = normalizeEmail(email) || "ese correo";
+    const project = currentSupabaseProjectLabel();
+
+    if (role === "admin") {
+        return `Ingresaste en Supabase Auth con ${normalizedEmail}, pero esta app no encontró una administradora asociada en el proyecto ${project}. Revisa la tabla admins y confirma que docs/static/config.js apunte al Supabase correcto.`;
+    }
+
+    return `Ingresaste en Supabase Auth con ${normalizedEmail}, pero esta app no encontró una clienta asociada en el proyecto ${project}. Si ya estabas registrada, revisa que uses el mismo correo y que docs/static/config.js apunte al Supabase correcto. Si eres nueva, entra por Crear registro.`;
 }
 
 function setFormBusy(form, busy) {

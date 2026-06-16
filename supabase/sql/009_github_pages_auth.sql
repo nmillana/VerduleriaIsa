@@ -88,10 +88,7 @@ for select
 to authenticated
 using (
     auth_user_id = (select auth.uid())
-    or (
-        auth_user_id is null
-        and lower(email) = lower(coalesce((select auth.jwt() ->> 'email'), ''))
-    )
+    or lower(email) = lower(coalesce((select auth.jwt() ->> 'email'), ''))
 );
 
 create policy "admins_self_claim"
@@ -100,10 +97,7 @@ for update
 to authenticated
 using (
     auth_user_id = (select auth.uid())
-    or (
-        auth_user_id is null
-        and lower(email) = lower(coalesce((select auth.jwt() ->> 'email'), ''))
-    )
+    or lower(email) = lower(coalesce((select auth.jwt() ->> 'email'), ''))
 )
 with check (
     auth_user_id = (select auth.uid())
@@ -120,10 +114,7 @@ for select
 to authenticated
 using (
     auth_user_id = (select auth.uid())
-    or (
-        auth_user_id is null
-        and lower(email) = lower(coalesce((select auth.jwt() ->> 'email'), ''))
-    )
+    or lower(email) = lower(coalesce((select auth.jwt() ->> 'email'), ''))
     or (select private.is_admin_user())
 );
 
@@ -142,10 +133,7 @@ for update
 to authenticated
 using (
     auth_user_id = (select auth.uid())
-    or (
-        auth_user_id is null
-        and lower(email) = lower(coalesce((select auth.jwt() ->> 'email'), ''))
-    )
+    or lower(email) = lower(coalesce((select auth.jwt() ->> 'email'), ''))
     or (select private.is_admin_user())
 )
 with check (
