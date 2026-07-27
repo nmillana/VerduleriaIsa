@@ -13,6 +13,10 @@ const STATUS_LABELS = {
 };
 const DELIVERY_FEE = 5000;
 const APP_NAME = "Verduleria Isa";
+const CART_STORAGE_PREFIX = "verduleriaisa.cart.v1";
+const MAX_CLIENT_NOTE_LENGTH = 500;
+const MAX_QUANTITY = 999;
+const TEMP_ADMIN_PASSWORD = "verduleria";
 
 const state = {
     client: null,
@@ -145,7 +149,8 @@ async function resolveRoute(route) {
 
     if (route.path === "/") {
         if (state.role === "admin") {
-            return redirectView("/admin/dashboard", "", "notice", "Abriendo panel administrador...");
+            const target = state.profile?.must_reset_password ? "/admin/cambiar-clave" : "/admin/dashboard";
+            return redirectView(target, "", "notice", "Abriendo panel administrador...");
         }
         if (state.role === "client") {
             return redirectView("/cliente/dashboard", "", "notice", "Abriendo tu panel...");
@@ -169,9 +174,28 @@ async function resolveRoute(route) {
 
     if (route.path === "/admin/login") {
         if (state.role === "admin") {
-            return redirectView("/admin/dashboard", "", "notice", "Abriendo panel administrador...");
+            const target = state.profile?.must_reset_password ? "/admin/cambiar-clave" : "/admin/dashboard";
+            return redirectView(target, "", "notice", "Abriendo panel administrador...");
         }
         return { title: "Ingreso administrador", content: renderAdminLoginPage() };
+    }
+
+    if (route.path === "/admin/cambiar-clave") {
+        const redirect = requireRole("admin", "/admin/login", "Debes ingresar como administradora.");
+        if (redirect) {
+            return redirect;
+        }
+        return { title: "Nueva clave", content: renderAdminPasswordResetPage(state.profile) };
+    }
+
+    if (route.path.startsWith("/admin/")) {
+        const redirect = requireRole("admin", "/admin/login", "Debes ingresar como administradora.");
+        if (redirect) {
+            return redirect;
+        }
+        if (state.profile?.must_reset_password) {
+            return redirectView("/admin/cambiar-clave", "Primero define una nueva contraseña.", "notice");
+        }
     }
 
     if (route.path === "/cliente/dashboard") {
@@ -368,7 +392,7 @@ async function syncIdentity(event = "") {
 
 async function linkAndFetchAdmin(user) {
     const email = normalizeEmail(user.email);
-    const fields = "id,name,email,auth_user_id";
+    const fields = "id,name,email,auth_user_id,must_reset_password,password_reset_at";
 
     let admin = await fetchSingleRow(
         state.client.from("admins").select(fields).eq("auth_user_id", user.id)
@@ -787,6 +811,9 @@ async function handleSubmit(event) {
             case "admin-login":
                 await submitAdminLogin(form);
                 break;
+            case "admin-password-reset":
+                await submitAdminPasswordReset(form);
+                break;
             case "client-profile-update":
                 await submitClientProfile(form);
                 break;
@@ -957,7 +984,57 @@ async function submitAdminLogin(form) {
         throw new Error(buildRoleLinkError("admin", email));
     }
 
+    if (state.profile?.must_reset_password) {
+        state.flash = { tone: "notice", message: "Define una nueva contraseña para activar el panel." };
+        navigate("/admin/cambiar-clave", true);
+        return;
+    }
+
     state.flash = { tone: "notice", message: "Ingreso administrador correcto." };
+    navigate("/admin/dashboard", true);
+}
+
+async function submitAdminPasswordReset(form) {
+    const formData = new FormData(form);
+    const password = String(formData.get("new_password") || "");
+    const confirmPassword = String(formData.get("confirm_password") || "");
+
+    if (password.length < 8) {
+        throw new Error("La nueva contraseña debe tener al menos 8 caracteres.");
+    }
+    if (password.toLowerCase() === TEMP_ADMIN_PASSWORD) {
+        throw new Error("Elige una contraseña distinta a la temporal.");
+    }
+    if (password !== confirmPassword) {
+        throw new Error("Las contraseñas no coinciden.");
+    }
+
+    const updatedRows = await runQuery(
+        state.client
+            .from("admins")
+            .update({ must_reset_password: false, password_reset_at: new Date().toISOString() })
+            .eq("id", state.profile.id)
+            .select("id,name,email,auth_user_id,must_reset_password,password_reset_at")
+    );
+
+    const { error } = await state.client.auth.updateUser({ password });
+    if (error) {
+        try {
+            await runQuery(
+                state.client
+                    .from("admins")
+                    .update({ must_reset_password: true, password_reset_at: null })
+                    .eq("id", state.profile.id)
+                    .select("id")
+            );
+        } catch (resetError) {
+            console.error(resetError);
+        }
+        throw error;
+    }
+
+    state.profile = normalizeAdmin(updatedRows[0] || { ...state.profile, must_reset_password: false });
+    state.flash = { tone: "notice", message: "Contraseña actualizada. Ya puedes administrar la verdulería." };
     navigate("/admin/dashboard", true);
 }
 
@@ -1139,6 +1216,12 @@ function renderNavigation() {
     }
 
     if (state.role === "admin") {
+        if (state.profile?.must_reset_password) {
+            return [
+                `<a href="#/admin/cambiar-clave">Nueva clave</a>`,
+                `<button type="button" data-action="logout">Salir</button>`,
+            ].join("");
+        }
         return [
             `<a href="#/admin/dashboard">Panel</a>`,
             `<a href="#/admin/pedidos">Pedidos</a>`,
@@ -1250,15 +1333,34 @@ function renderAdminLoginPage() {
     return `
         <section class="form-panel narrow">
             <h1>Ingreso administrador</h1>
-            <p class="muted">Usa el mismo correo que ya figura en la tabla <code>admins</code>. Si antes quedó ligado a otro usuario de Auth, la app intentará re-enlazarlo.</p>
+            <p class="muted">Usa el correo administrador registrado. Si es primer ingreso, entra con la clave temporal entregada y la app pedirá crear una nueva.</p>
             <form class="stacked-form" data-form="admin-login">
                 <label>Correo
-                    <input type="email" name="email" required>
+                    <input type="email" name="email" autocomplete="email" required>
                 </label>
                 <label>Contraseña
-                    <input type="password" name="password" required>
+                    <input type="password" name="password" autocomplete="current-password" required>
                 </label>
                 <button class="button primary" type="submit">Ingresar</button>
+            </form>
+        </section>
+    `;
+}
+
+function renderAdminPasswordResetPage(admin) {
+    return `
+        <section class="form-panel narrow">
+            <p class="eyebrow">Primer ingreso</p>
+            <h1>Crea tu contraseña</h1>
+            <p class="muted">${e(admin.email)} debe cambiar la clave temporal antes de abrir el panel.</p>
+            <form class="stacked-form" data-form="admin-password-reset">
+                <label>Nueva contraseña
+                    <input type="password" name="new_password" minlength="8" autocomplete="new-password" required>
+                </label>
+                <label>Confirmar contraseña
+                    <input type="password" name="confirm_password" minlength="8" autocomplete="new-password" required>
+                </label>
+                <button class="button primary" type="submit">Guardar nueva contraseña</button>
             </form>
         </section>
     `;
@@ -1930,8 +2032,8 @@ function renderSetupPanel(extraMessage = "") {
             ${extraMessage ? `<div class="error-box"><p>${e(extraMessage)}</p></div>` : ""}
             <div class="list-grid">
                 <p>1. Completa <code>docs/static/config.js</code> con tu <code>SUPABASE_ANON_KEY</code>.</p>
-                <p>2. Ejecuta <code>supabase/sql/009_github_pages_auth.sql</code> y luego <code>supabase/sql/010_secure_order_creation.sql</code> en el SQL Editor.</p>
-                <p>3. Crea el usuario administrador en Supabase Auth con el mismo correo que ya tienes en <code>admins</code>.</p>
+                <p>2. Ejecuta <code>supabase/sql/009_github_pages_auth.sql</code>, <code>supabase/sql/010_secure_order_creation.sql</code> y <code>supabase/sql/011_admin_first_login_setup.sql</code> en el SQL Editor.</p>
+                <p>3. Crea las administradoras en Supabase Auth con la clave temporal acordada.</p>
                 <p>4. Publica la carpeta <code>docs/</code> desde GitHub Pages.</p>
             </div>
         </section>
@@ -1948,7 +2050,7 @@ function renderErrorView(error) {
                 <p>${e(friendlyError(error))}</p>
             </div>
             <div class="list-grid">
-                <p>Archivos clave: <code>supabase/sql/009_github_pages_auth.sql</code> y <code>supabase/sql/010_secure_order_creation.sql</code></p>
+                <p>Archivos clave: <code>supabase/sql/009_github_pages_auth.sql</code>, <code>supabase/sql/010_secure_order_creation.sql</code> y <code>supabase/sql/011_admin_first_login_setup.sql</code></p>
                 <p>Config pública: <code>docs/static/config.js</code></p>
                 <p>Publicación: GitHub Pages apuntando a la carpeta <code>docs/</code></p>
             </div>
@@ -2498,6 +2600,8 @@ function normalizeAdmin(row) {
         name: String(row.name || ""),
         email: normalizeEmail(row.email),
         auth_user_id: row.auth_user_id || "",
+        must_reset_password: Boolean(row.must_reset_password),
+        password_reset_at: row.password_reset_at || null,
     };
 }
 

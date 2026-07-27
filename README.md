@@ -80,14 +80,16 @@ Esta version ya no depende del backend Flask y usa:
 - `docs/static/config.js` para `SUPABASE_URL` y `SUPABASE_ANON_KEY`
 - `supabase/sql/009_github_pages_auth.sql` para enlazar `auth.users` con `clients` y `admins`
 - `supabase/sql/010_secure_order_creation.sql` para crear pedidos con una RPC transaccional y totales calculados en Supabase
+- `supabase/sql/011_admin_first_login_setup.sql` para preparar administradoras y obligar cambio de clave temporal
 
 Pasos:
 
 1. Completa `docs/static/config.js` con tu `SUPABASE_ANON_KEY`
 2. Ejecuta `supabase/sql/009_github_pages_auth.sql` en Supabase
 3. Ejecuta `supabase/sql/010_secure_order_creation.sql` en Supabase
-4. Crea en `Authentication > Users` el usuario admin con el mismo correo que ya existe en la tabla `admins`
-5. Publica GitHub Pages apuntando a la carpeta `docs/`
+4. Crea en `Authentication > Users` los usuarios `isabelsoledadster@gmail.com` y `nataliamillanassler@gmail.com` con la clave temporal acordada
+5. Ejecuta `supabase/sql/011_admin_first_login_setup.sql` en Supabase
+6. Publica GitHub Pages apuntando a la carpeta `docs/`
 
 ### Importante sobre el login
 
