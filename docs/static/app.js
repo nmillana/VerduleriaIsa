@@ -190,6 +190,17 @@ async function resolveRoute(route) {
         };
     }
 
+    if (route.path === "/cliente/perfil") {
+        const redirect = requireRole("client", "/login-cliente", "Debes ingresar como clienta.");
+        if (redirect) {
+            return redirect;
+        }
+        return {
+            title: "Mi perfil",
+            content: renderClientProfilePage(state.profile),
+        };
+    }
+
     if (route.path === "/cliente/pedido/nuevo") {
         const redirect = requireRole("client", "/login-cliente", "Debes ingresar como clienta.");
         if (redirect) {
@@ -198,10 +209,12 @@ async function resolveRoute(route) {
         const products = await fetchProducts();
         const sourceId = Number(route.query.get("source") || 0);
         const sourceOrder = sourceId ? await fetchOrderById(sourceId, { clientId: state.profile.id }) : null;
-        const quantities = sourceOrder ? buildRepeatQuantities(sourceOrder) : {};
+        const draft = sourceOrder
+            ? { quantities: buildRepeatQuantities(sourceOrder), client_note: sourceOrder.client_note || "" }
+            : readOrderDraft();
         return {
             title: "Nuevo pedido",
-            content: renderClientOrderFormPage(products, quantities, sourceOrder),
+            content: renderClientOrderFormPage(products, draft.quantities, sourceOrder, draft.client_note),
         };
     }
 
@@ -481,7 +494,7 @@ async function fetchClientsWithOrderCounts() {
 async function fetchOrders(options = {}) {
     let query = state.client
         .from("orders")
-        .select("id,client_id,source_order_id,status,admin_note,estimated_total,actual_total,created_at,updated_at,purchased_at")
+        .select("id,client_id,source_order_id,status,admin_note,client_note,estimated_total,actual_total,created_at,updated_at,purchased_at")
         .order("created_at", { ascending: false });
 
     if (options.clientId) {
@@ -527,7 +540,7 @@ async function fetchOrders(options = {}) {
 async function fetchOrderById(orderId, options = {}) {
     let query = state.client
         .from("orders")
-        .select("id,client_id,source_order_id,status,admin_note,estimated_total,actual_total,created_at,updated_at,purchased_at")
+        .select("id,client_id,source_order_id,status,admin_note,client_note,estimated_total,actual_total,created_at,updated_at,purchased_at")
         .eq("id", orderId);
 
     if (options.clientId) {
@@ -605,68 +618,51 @@ async function fetchOrderItemsByOrderIds(orderIds) {
     return map;
 }
 
-async function createOrder(clientId, quantities, sourceOrderId) {
-    const productIds = Object.keys(quantities).map(Number).filter(Boolean);
-    if (!productIds.length) {
+async function createOrder(quantities, sourceOrderId, clientNote) {
+    const items = buildSecureOrderItems(quantities);
+    if (!items.length) {
         throw new Error("No hay productos seleccionados.");
     }
 
-    const products = await runQuery(
-        state.client
-            .from("products")
-            .select("id,name,category,estimated_price,is_active,created_at,updated_at")
-            .in("id", productIds)
-            .eq("is_active", true)
-    );
+    const { data, error } = await state.client.rpc("create_secure_order", {
+        p_items: items,
+        p_source_order_id: sourceOrderId || null,
+        p_client_note: sanitizeText(clientNote, MAX_CLIENT_NOTE_LENGTH) || null,
+    });
 
-    const productMap = new Map(products.map((row) => {
-        const product = normalizeProduct(row);
-        return [product.id, product];
-    }));
-
-    const lineItems = [];
-    let estimatedTotal = 0;
-    for (const [rawProductId, rawQuantity] of Object.entries(quantities)) {
-        const productId = Number(rawProductId);
-        const quantity = Number(rawQuantity);
-        const product = productMap.get(productId);
-        if (!product || !quantity || quantity <= 0) {
-            continue;
-        }
-        const estimatedSubtotal = Math.round(product.estimated_price * quantity);
-        estimatedTotal += estimatedSubtotal;
-        lineItems.push({
-            product_id: product.id,
-            product_name: product.name,
-            quantity,
-            estimated_price: product.estimated_price,
-            estimated_total: estimatedSubtotal,
-        });
+    if (error) {
+        throw error;
     }
 
-    if (!lineItems.length) {
-        throw new Error("No se pudo construir el pedido con los productos seleccionados.");
+    const orderId = Number(data);
+    if (!orderId) {
+        throw new Error("Supabase no devolvió el número del pedido creado.");
     }
-
-    const insertedOrders = await runQuery(
-        state.client
-            .from("orders")
-            .insert({
-                client_id: clientId,
-                source_order_id: sourceOrderId || null,
-                status: "pendiente",
-                estimated_total: estimatedTotal,
-            })
-            .select("id")
-    );
-    const orderId = Number(insertedOrders[0]?.id);
-
-    const payload = lineItems.map((item) => ({
-        ...item,
-        order_id: orderId,
-    }));
-    await runQuery(state.client.from("order_items").insert(payload).select("id"));
     return orderId;
+}
+
+async function updateClientProfile(values) {
+    const payload = {
+        name: sanitizeText(values.name, 120),
+        phone: sanitizeText(values.phone, 40),
+        address: sanitizeText(values.address, 255),
+        billing_type: values.billing_type === "mensual" ? "mensual" : "semanal",
+    };
+
+    if (!payload.name || !payload.phone || !payload.address) {
+        throw new Error("Completa nombre, teléfono y dirección.");
+    }
+
+    const fields = "id,name,email,phone,address,billing_type,auth_user_id,created_at,updated_at,last_login_at";
+    const updatedRows = await runQuery(
+        state.client
+            .from("clients")
+            .update(payload)
+            .eq("id", state.profile.id)
+            .select(fields)
+    );
+
+    state.profile = normalizeClient(updatedRows[0] || { ...state.profile, ...payload });
 }
 
 async function saveProduct(values) {
@@ -749,6 +745,10 @@ async function handleSubmit(event) {
 
     event.preventDefault();
 
+    if (form.dataset.busy === "1") {
+        return;
+    }
+
     if (kind === "client-dashboard-filter") {
         const month = validMonth(new FormData(form).get("month")) || currentMonthValue();
         navigate(`/cliente/dashboard?month=${month}`);
@@ -786,6 +786,9 @@ async function handleSubmit(event) {
                 break;
             case "admin-login":
                 await submitAdminLogin(form);
+                break;
+            case "client-profile-update":
+                await submitClientProfile(form);
                 break;
             case "client-order-create":
                 await submitClientOrder(form);
@@ -846,6 +849,16 @@ async function handleClick(event) {
 function handleInput(event) {
     if (event.target.matches("[data-quantity-input]")) {
         refreshOrderSummary();
+        const form = event.target.closest("[data-order-form]");
+        if (form) {
+            persistOrderDraft(form);
+        }
+    }
+    if (event.target.matches("[data-client-note]")) {
+        const form = event.target.closest("[data-order-form]");
+        if (form) {
+            persistOrderDraft(form);
+        }
     }
     if (event.target.matches("[data-product-search]")) {
         filterOrderRows();
@@ -948,18 +961,25 @@ async function submitAdminLogin(form) {
     navigate("/admin/dashboard", true);
 }
 
+async function submitClientProfile(form) {
+    const formData = new FormData(form);
+    await updateClientProfile({
+        name: formData.get("name"),
+        phone: formData.get("phone"),
+        address: formData.get("address"),
+        billing_type: formData.get("billing_type"),
+    });
+    state.flash = { tone: "notice", message: "Datos actualizados." };
+    navigate("/cliente/dashboard", true);
+}
+
 async function submitClientOrder(form) {
-    const quantities = {};
-    for (const input of form.querySelectorAll("[data-quantity-input]")) {
-        const productId = Number(input.name.replace("qty_", ""));
-        const quantity = Number(String(input.value || "").replace(",", "."));
-        if (productId && quantity > 0) {
-            quantities[productId] = quantity;
-        }
-    }
+    const quantities = collectOrderQuantities(form);
     const sourceOrderId = Number(form.querySelector('input[name="source_order_id"]')?.value || 0);
-    const orderId = await createOrder(state.profile.id, quantities, sourceOrderId || null);
-    state.flash = { tone: "notice", message: "Pedido guardado." };
+    const clientNote = sanitizeText(new FormData(form).get("client_note"), MAX_CLIENT_NOTE_LENGTH);
+    const orderId = await createOrder(quantities, sourceOrderId || null, clientNote);
+    clearOrderDraft();
+    state.flash = { tone: "notice", message: "Pedido guardado. El total fue calculado en Supabase." };
     navigate(`/cliente/pedido/${orderId}`, true);
 }
 
@@ -1113,6 +1133,7 @@ function renderNavigation() {
         return [
             `<a href="#/cliente/dashboard">Mi panel</a>`,
             `<a href="#/cliente/pedido/nuevo">Nuevo pedido</a>`,
+            `<a href="#/cliente/perfil">Mi perfil</a>`,
             `<button type="button" data-action="logout">Salir</button>`,
         ].join("");
     }
@@ -1300,6 +1321,37 @@ function renderClientDashboardPage(client, dashboard, month) {
     `;
 }
 
+function renderClientProfilePage(client) {
+    return `
+        <section class="form-panel narrow">
+            <p class="eyebrow">Cuenta clienta</p>
+            <h1>Mi perfil</h1>
+            <p class="muted">Correo: ${e(client.email)}</p>
+            <form class="stacked-form" data-form="client-profile-update">
+                <label>Nombre
+                    <input type="text" name="name" value="${e(client.name)}" required>
+                </label>
+                <label>Teléfono
+                    <input type="tel" name="phone" value="${e(client.phone)}" required>
+                </label>
+                <label>Dirección
+                    <textarea name="address" rows="3" required>${e(client.address)}</textarea>
+                </label>
+                <label>Tipo de pago
+                    <select name="billing_type">
+                        <option value="semanal" ${client.billing_type === "semanal" ? "selected" : ""}>Semanal</option>
+                        <option value="mensual" ${client.billing_type === "mensual" ? "selected" : ""}>Mensual</option>
+                    </select>
+                </label>
+                <div class="hero-actions">
+                    <button class="button primary" type="submit">Guardar datos</button>
+                    <a class="button ghost" href="#/cliente/dashboard">Volver</a>
+                </div>
+            </form>
+        </section>
+    `;
+}
+
 function renderClientOrderCard(order) {
     return `
         <article class="order-card">
@@ -1321,8 +1373,9 @@ function renderClientOrderCard(order) {
     `;
 }
 
-function renderClientOrderFormPage(products, quantities, sourceOrder) {
+function renderClientOrderFormPage(products, quantities, sourceOrder, clientNote = "") {
     const groupedProducts = groupProducts(products);
+    const hasProducts = products.length > 0;
     const groupsMarkup = CATEGORY_CHOICES
         .map(([category, label]) => {
             const items = groupedProducts.get(category) || [];
@@ -1330,7 +1383,7 @@ function renderClientOrderFormPage(products, quantities, sourceOrder) {
                 return "";
             }
             return `
-                <div class="panel">
+                <div class="panel product-group">
                     <h2>${e(label)}</h2>
                     <div class="product-table">
                         ${items.map((product) => `
@@ -1343,6 +1396,8 @@ function renderClientOrderFormPage(products, quantities, sourceOrder) {
                                     type="number"
                                     step="0.25"
                                     min="0"
+                                    max="${MAX_QUANTITY}"
+                                    inputmode="decimal"
                                     name="qty_${product.id}"
                                     value="${quantities[product.id] ? e(formatQty(quantities[product.id]).replace(",", ".")) : ""}"
                                     data-price="${product.estimated_price}"
@@ -1355,6 +1410,22 @@ function renderClientOrderFormPage(products, quantities, sourceOrder) {
             `;
         })
         .join("");
+
+    if (!hasProducts) {
+        return `
+            <section class="section-head">
+                <div>
+                    <p class="eyebrow">Pedido semanal</p>
+                    <h1>Arma tu pedido</h1>
+                </div>
+            </section>
+            <section class="empty-state">
+                <p class="eyebrow">Catálogo</p>
+                <h2>Sin productos activos</h2>
+                <p class="muted">Cuando la administradora active productos, aparecerán aquí.</p>
+            </section>
+        `;
+    }
 
     return `
         <section class="section-head">
@@ -1391,9 +1462,14 @@ function renderClientOrderFormPage(products, quantities, sourceOrder) {
                         <strong data-estimated-total>${formatCurrency(DELIVERY_FEE)}</strong>
                     </div>
                 </div>
-                <button class="button primary full-width" type="submit">Guardar pedido</button>
+                <label>Observaciones
+                    <textarea name="client_note" rows="3" maxlength="${MAX_CLIENT_NOTE_LENGTH}" data-client-note>${e(clientNote || "")}</textarea>
+                </label>
+                <p class="field-note" data-draft-status>Carrito guardado en este dispositivo.</p>
+                <button class="button primary full-width" type="submit">Enviar pedido</button>
             </aside>
             <section class="product-columns">
+                <p class="empty-search" data-product-search-empty hidden>No hay productos con esa búsqueda.</p>
                 ${groupsMarkup}
             </section>
         </form>
@@ -1431,6 +1507,13 @@ function renderClientOrderDetailPage(order) {
                 </article>
             </div>
         </section>
+
+        ${order.client_note ? `
+            <section class="panel">
+                <h2>Observaciones</h2>
+                <p>${e(order.client_note)}</p>
+            </section>
+        ` : ""}
 
         <section class="panel">
             <h2>Productos</h2>
@@ -1612,6 +1695,7 @@ function renderAdminOrderDetailPage(order) {
             <article class="panel">
                 <h2>Datos de entrega</h2>
                 <p>${e(order.client_address)}</p>
+                ${order.client_note ? `<p class="muted">Observaciones: ${e(order.client_note)}</p>` : ""}
                 <p class="muted">Creado: ${e(formatDateTime(order.created_at))}</p>
                 <p class="muted">Teléfono: ${e(order.client_phone)}</p>
             </article>
@@ -1846,7 +1930,7 @@ function renderSetupPanel(extraMessage = "") {
             ${extraMessage ? `<div class="error-box"><p>${e(extraMessage)}</p></div>` : ""}
             <div class="list-grid">
                 <p>1. Completa <code>docs/static/config.js</code> con tu <code>SUPABASE_ANON_KEY</code>.</p>
-                <p>2. Ejecuta <code>supabase/sql/009_github_pages_auth.sql</code> en el SQL Editor.</p>
+                <p>2. Ejecuta <code>supabase/sql/009_github_pages_auth.sql</code> y luego <code>supabase/sql/010_secure_order_creation.sql</code> en el SQL Editor.</p>
                 <p>3. Crea el usuario administrador en Supabase Auth con el mismo correo que ya tienes en <code>admins</code>.</p>
                 <p>4. Publica la carpeta <code>docs/</code> desde GitHub Pages.</p>
             </div>
@@ -1864,7 +1948,7 @@ function renderErrorView(error) {
                 <p>${e(friendlyError(error))}</p>
             </div>
             <div class="list-grid">
-                <p>Archivo clave: <code>supabase/sql/009_github_pages_auth.sql</code></p>
+                <p>Archivos clave: <code>supabase/sql/009_github_pages_auth.sql</code> y <code>supabase/sql/010_secure_order_creation.sql</code></p>
                 <p>Config pública: <code>docs/static/config.js</code></p>
                 <p>Publicación: GitHub Pages apuntando a la carpeta <code>docs/</code></p>
             </div>
@@ -1912,9 +1996,18 @@ function filterOrderRows() {
         return;
     }
     const term = search.value.trim().toLowerCase();
+    let visibleRows = 0;
     for (const row of document.querySelectorAll(".product-row")) {
         const name = row.dataset.productName || "";
-        row.style.display = !term || name.includes(term) ? "grid" : "none";
+        const isVisible = !term || name.includes(term);
+        row.style.display = isVisible ? "grid" : "none";
+        if (isVisible) {
+            visibleRows += 1;
+        }
+    }
+    const emptySearch = document.querySelector("[data-product-search-empty]");
+    if (emptySearch) {
+        emptySearch.hidden = visibleRows > 0;
     }
 }
 
@@ -2043,12 +2136,105 @@ function buildRepeatQuantities(order) {
     return values;
 }
 
+function readOrderDraft() {
+    const emptyDraft = { quantities: {}, client_note: "" };
+    try {
+        const raw = window.localStorage?.getItem(cartStorageKey());
+        if (!raw) {
+            return emptyDraft;
+        }
+        return normalizeOrderDraft(JSON.parse(raw));
+    } catch (error) {
+        return emptyDraft;
+    }
+}
+
+function persistOrderDraft(form) {
+    try {
+        const draft = {
+            quantities: collectOrderQuantities(form, { relaxed: true }),
+            client_note: sanitizeText(new FormData(form).get("client_note"), MAX_CLIENT_NOTE_LENGTH),
+        };
+        if (!Object.keys(draft.quantities).length && !draft.client_note) {
+            window.localStorage?.removeItem(cartStorageKey());
+            return;
+        }
+        window.localStorage?.setItem(cartStorageKey(), JSON.stringify(draft));
+    } catch (error) {
+        // localStorage can be unavailable in strict privacy modes.
+    }
+}
+
+function clearOrderDraft() {
+    try {
+        window.localStorage?.removeItem(cartStorageKey());
+    } catch (error) {
+        // localStorage can be unavailable in strict privacy modes.
+    }
+}
+
+function cartStorageKey() {
+    const userId = state.session?.user?.id || state.profile?.id || "anon";
+    return `${CART_STORAGE_PREFIX}.${userId}`;
+}
+
+function normalizeOrderDraft(raw) {
+    const draft = { quantities: {}, client_note: sanitizeText(raw?.client_note, MAX_CLIENT_NOTE_LENGTH) };
+    const quantities = raw?.quantities || {};
+    for (const [rawProductId, rawQuantity] of Object.entries(quantities)) {
+        const productId = Number(rawProductId);
+        const quantity = normalizeQuantity(rawQuantity);
+        if (productId && quantity > 0) {
+            draft.quantities[productId] = quantity;
+        }
+    }
+    return draft;
+}
+
+function collectOrderQuantities(form, options = {}) {
+    const quantities = {};
+    for (const input of form.querySelectorAll("[data-quantity-input]")) {
+        const productId = Number(input.name.replace("qty_", ""));
+        const rawValue = String(input.value || "").replace(",", ".");
+        const quantity = normalizeQuantity(rawValue);
+        if (!productId || quantity <= 0) {
+            continue;
+        }
+        if (quantity > MAX_QUANTITY) {
+            if (options.relaxed) {
+                continue;
+            }
+            throw new Error(`La cantidad máxima por producto es ${MAX_QUANTITY}.`);
+        }
+        quantities[productId] = quantity;
+    }
+    return quantities;
+}
+
+function buildSecureOrderItems(quantities) {
+    return Object.entries(quantities)
+        .map(([productId, quantity]) => ({
+            product_id: Number(productId),
+            quantity: normalizeQuantity(quantity),
+        }))
+        .filter((item) => item.product_id && item.quantity > 0 && item.quantity <= MAX_QUANTITY);
+}
+
+function normalizeQuantity(value) {
+    const quantity = Number(String(value || "").replace(",", "."));
+    if (!Number.isFinite(quantity) || quantity <= 0) {
+        return 0;
+    }
+    return Math.round(quantity * 100) / 100;
+}
+
 function buildOrderPrintMarkup(order, includeClient) {
     return `
         <div class="print-sheet">
             <h1>Pedido #${order.id}</h1>
             <p>${e(formatDateTime(order.created_at))} | Estado: ${e(statusLabel(order.status))}</p>
             ${includeClient ? `<p>Clienta: ${e(order.client_name)} | ${e(order.client_email)} | ${e(order.client_phone)}</p>` : ""}
+            ${order.client_note ? `<p>Observaciones: ${e(order.client_note)}</p>` : ""}
             <div class="print-sheet__summary">
                 <div class="print-sheet__card">
                     <strong>${formatCurrency(order.display_subtotal)}</strong>
@@ -2349,6 +2535,7 @@ function normalizeOrder(row) {
         source_order_id: row.source_order_id ? Number(row.source_order_id) : null,
         status: String(row.status || "pendiente"),
         admin_note: String(row.admin_note || ""),
+        client_note: String(row.client_note || ""),
         estimated_total: Math.round(Number(row.estimated_total) || 0),
         actual_total: row.actual_total === null || row.actual_total === undefined ? null : Math.round(Number(row.actual_total)),
         created_at: row.created_at || "",
@@ -2418,6 +2605,7 @@ function buildRoleLinkError(role, email) {
 }
 
 function setFormBusy(form, busy) {
+    form.dataset.busy = busy ? "1" : "";
     for (const field of form.querySelectorAll("button, input, select, textarea")) {
         field.disabled = busy;
     }

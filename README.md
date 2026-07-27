@@ -79,13 +79,15 @@ Esta version ya no depende del backend Flask y usa:
 - `docs/index.html` como SPA estatica
 - `docs/static/config.js` para `SUPABASE_URL` y `SUPABASE_ANON_KEY`
 - `supabase/sql/009_github_pages_auth.sql` para enlazar `auth.users` con `clients` y `admins`
+- `supabase/sql/010_secure_order_creation.sql` para crear pedidos con una RPC transaccional y totales calculados en Supabase
 
 Pasos:
 
 1. Completa `docs/static/config.js` con tu `SUPABASE_ANON_KEY`
 2. Ejecuta `supabase/sql/009_github_pages_auth.sql` en Supabase
-3. Crea en `Authentication > Users` el usuario admin con el mismo correo que ya existe en la tabla `admins`
-4. Publica GitHub Pages apuntando a la carpeta `docs/`
+3. Ejecuta `supabase/sql/010_secure_order_creation.sql` en Supabase
+4. Crea en `Authentication > Users` el usuario admin con el mismo correo que ya existe en la tabla `admins`
+5. Publica GitHub Pages apuntando a la carpeta `docs/`
 
 ### Importante sobre el login
 
@@ -98,4 +100,4 @@ GitHub Pages no ejecuta Python. Si quieres conservar la app server-side actual t
 
 ## Nota de seguridad
 
-La `SUPABASE_SERVICE_ROLE_KEY` debe quedar solo en variables privadas del servidor. No la expongas en codigo cliente ni en archivos versionados.
+La `SUPABASE_SERVICE_ROLE_KEY` debe quedar solo en variables privadas del servidor. No la expongas en codigo cliente ni en archivos versionados. En GitHub Pages, la clienta crea pedidos llamando `create_secure_order`; no vuelvas a habilitar inserts directos desde el navegador sobre `orders` u `order_items`.
