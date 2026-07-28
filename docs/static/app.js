@@ -17,6 +17,7 @@ const CART_STORAGE_PREFIX = "verduleriaisa.cart.v1";
 const MAX_CLIENT_NOTE_LENGTH = 500;
 const MAX_QUANTITY = 999;
 const TEMP_ADMIN_PASSWORD = "verduleria";
+const SUPABASE_TIMEOUT_MS = 20000;
 
 const state = {
     client: null,
@@ -57,7 +58,10 @@ async function startApplication() {
     });
 
     try {
-        const { data, error } = await state.client.auth.getSession();
+        const { data, error } = await withSupabaseTimeout(
+            state.client.auth.getSession(),
+            "Supabase no respondió al abrir la sesión guardada. Revisa la conexión e intenta recargar."
+        );
         if (error) {
             throw error;
         }
@@ -912,20 +916,23 @@ async function submitClientRegister(form) {
         throw new Error("Las contraseñas no coinciden.");
     }
 
-    const { data, error } = await state.client.auth.signUp({
-        email,
-        password,
-        options: {
-            emailRedirectTo: currentAppUrl(),
-            data: {
-                role: "client",
-                name,
-                phone,
-                address,
-                billing_type: billingType,
+    const { data, error } = await withSupabaseTimeout(
+        state.client.auth.signUp({
+            email,
+            password,
+            options: {
+                emailRedirectTo: currentAppUrl(),
+                data: {
+                    role: "client",
+                    name,
+                    phone,
+                    address,
+                    billing_type: billingType,
+                },
             },
-        },
-    });
+        }),
+        "Supabase no respondió al registrar la cuenta. Revisa la conexión e intenta nuevamente."
+    );
 
     if (error) {
         throw error;
@@ -951,7 +958,10 @@ async function submitClientLogin(form) {
     const email = normalizeEmail(formData.get("email"));
     const password = String(formData.get("password") || "");
 
-    const { data, error } = await state.client.auth.signInWithPassword({ email, password });
+    const { data, error } = await withSupabaseTimeout(
+        state.client.auth.signInWithPassword({ email, password }),
+        "Supabase no respondió al ingresar. Revisa la conexión e intenta nuevamente."
+    );
     if (error) {
         throw error;
     }
@@ -972,7 +982,14 @@ async function submitAdminLogin(form) {
     const email = normalizeEmail(formData.get("email"));
     const password = String(formData.get("password") || "");
 
-    const { data, error } = await state.client.auth.signInWithPassword({ email, password });
+    if (!email || !password) {
+        throw new Error("Ingresa correo y contraseña.");
+    }
+
+    const { data, error } = await withSupabaseTimeout(
+        state.client.auth.signInWithPassword({ email, password }),
+        "Supabase no respondió al ingresar como administradora. Revisa la conexión e intenta nuevamente."
+    );
     if (error) {
         throw error;
     }
@@ -1017,7 +1034,10 @@ async function submitAdminPasswordReset(form) {
             .select("id,name,email,auth_user_id,must_reset_password,password_reset_at")
     );
 
-    const { error } = await state.client.auth.updateUser({ password });
+    const { error } = await withSupabaseTimeout(
+        state.client.auth.updateUser({ password }),
+        "Supabase no respondió al actualizar la contraseña. Revisa la conexión e intenta nuevamente."
+    );
     if (error) {
         try {
             await runQuery(
@@ -2702,7 +2722,7 @@ function buildRoleLinkError(role, email) {
     const project = currentSupabaseProjectLabel();
 
     if (role === "admin") {
-        return `Ingresaste en Supabase Auth con ${normalizedEmail}, pero esta app no encontró una administradora asociada en el proyecto ${project}. Revisa la tabla admins y confirma que docs/static/config.js apunte al Supabase correcto.`;
+        return `Ingresaste en Supabase Auth con ${normalizedEmail}, pero esta app no encontró una administradora asociada en el proyecto ${project}. Revisa la tabla admins, ejecuta supabase/sql/011_admin_first_login_setup.sql después de crear el usuario Auth y confirma que docs/static/config.js apunte al Supabase correcto.`;
     }
 
     return `Ingresaste en Supabase Auth con ${normalizedEmail}, pero esta app no encontró una clienta asociada en el proyecto ${project}. Si ya estabas registrada, revisa que uses el mismo correo y que docs/static/config.js apunte al Supabase correcto. Si eres nueva, entra por Crear registro.`;
@@ -2710,9 +2730,32 @@ function buildRoleLinkError(role, email) {
 
 function setFormBusy(form, busy) {
     form.dataset.busy = busy ? "1" : "";
+    for (const button of form.querySelectorAll("button")) {
+        if (busy) {
+            if (!button.dataset.originalText) {
+                button.dataset.originalText = button.textContent;
+            }
+            button.textContent = button.dataset.busyText || "Procesando...";
+            button.setAttribute("aria-busy", "true");
+        } else {
+            if (button.dataset.originalText) {
+                button.textContent = button.dataset.originalText;
+                delete button.dataset.originalText;
+            }
+            button.removeAttribute("aria-busy");
+        }
+    }
     for (const field of form.querySelectorAll("button, input, select, textarea")) {
         field.disabled = busy;
     }
+}
+
+function withSupabaseTimeout(promise, message, timeoutMs = SUPABASE_TIMEOUT_MS) {
+    let timeoutId = 0;
+    const timeout = new Promise((_, reject) => {
+        timeoutId = window.setTimeout(() => reject(new Error(message)), timeoutMs);
+    });
+    return Promise.race([promise, timeout]).finally(() => window.clearTimeout(timeoutId));
 }
 
 async function runQuery(query) {
@@ -2730,6 +2773,15 @@ async function fetchSingleRow(query) {
 
 function friendlyError(error) {
     const raw = typeof error === "string" ? error : error?.message || "Ocurrió un problema inesperado.";
+    if (/must_reset_password|password_reset_at/i.test(raw)) {
+        return "Falta ejecutar supabase/sql/011_admin_first_login_setup.sql en Supabase para activar el primer ingreso administrador.";
+    }
+    if (/relation .*admins.* does not exist|public\.admins/i.test(raw)) {
+        return "No encontré la tabla admins en Supabase. Revisa que hayas ejecutado el esquema inicial en el SQL Editor.";
+    }
+    if (/failed to fetch|networkerror|load failed|no se puede resolver|err_/i.test(raw)) {
+        return "No pude conectar con Supabase. Revisa internet, el proyecto configurado y vuelve a intentar.";
+    }
     return raw
         .replace(/row-level security/gi, "permisos RLS")
         .replace(/jwt/gi, "sesión")
