@@ -984,8 +984,11 @@ async function submitAdminLogin(form) {
     const email = normalizeEmail(formData.get("email"));
     const password = String(formData.get("password") || "");
 
-    if (!email || !password) {
-        throw new Error("Ingresa correo y contraseña.");
+    if (!email) {
+        throw new Error("Escribe el correo administrador completo.");
+    }
+    if (!password) {
+        throw new Error("Escribe la contraseña. Para primer ingreso usa la temporal verduleria.");
     }
 
     setInlineStatus(form, "Conectando con Supabase...", "notice");
@@ -1360,12 +1363,12 @@ function renderAdminLoginPage() {
         <section class="form-panel narrow">
             <h1>Ingreso administrador</h1>
             <p class="muted">Usa el correo administrador registrado. Si es primer ingreso, entra con la clave temporal entregada y la app pedirá crear una nueva.</p>
-            <form class="stacked-form" data-form="admin-login">
+            <form class="stacked-form" data-form="admin-login" novalidate>
                 <label>Correo
-                    <input type="email" name="email" autocomplete="email" required>
+                    <input type="email" name="email" autocomplete="email" placeholder="nataliamillanassler@gmail.com" required>
                 </label>
                 <label>Contraseña
-                    <input type="password" name="password" autocomplete="current-password" required>
+                    <input type="password" name="password" autocomplete="current-password" placeholder="Clave temporal o tu nueva clave" required>
                 </label>
                 <p class="field-note" data-admin-login-status>Proyecto Supabase: ${e(currentSupabaseProjectLabel())}</p>
                 <button class="button primary" type="submit" data-busy-text="Ingresando...">Ingresar</button>
