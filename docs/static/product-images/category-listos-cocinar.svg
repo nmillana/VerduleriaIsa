@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 180" role="img" aria-label="Listos">
+  <rect width="240" height="180" rx="18" fill="#fff3df"/>
+  <circle cx="72" cy="92" r="42" fill="#ffffff" opacity="0.86"/>
+  <circle cx="144" cy="86" r="48" fill="#ffffff" opacity="0.72"/>
+  <path d="M74 112c24-54 72-70 116-45-18 34-56 57-100 54-7 0-12-3-16-9Z" fill="#2f8f3d"/>
+  <path d="M93 107c24-15 46-27 78-37" fill="none" stroke="#ffffff" stroke-width="8" stroke-linecap="round" opacity="0.72"/>
+  <circle cx="76" cy="74" r="20" fill="#f47b22"/>
+  <circle cx="96" cy="63" r="16" fill="#f47b22" opacity="0.86"/>
+  <circle cx="115" cy="77" r="18" fill="#f47b22" opacity="0.76"/>
+  <text x="120" y="155" text-anchor="middle" font-family="Arial, sans-serif" font-size="20" font-weight="700" fill="#123d2a">Listos</text>
+</svg>

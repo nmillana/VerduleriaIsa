@@ -1,8 +1,11 @@
 const CATEGORY_CHOICES = [
     ["frutas", "Frutas"],
-    ["verduras", "Verduras"],
-    ["hierbas y complementos", "Hierbas y Complementos"],
-    ["legumbres y otros", "Legumbres y otros"],
+    ["verduras_hortalizas", "Verduras y hortalizas"],
+    ["hojas_ensaladas", "Hojas y ensaladas"],
+    ["hierbas_alinos", "Hierbas y aliños"],
+    ["listos_cocinar", "Listos para cocinar"],
+    ["legumbres_frutos_aceitunas", "Legumbres, frutos secos y aceitunas"],
+    ["huevos_despensa", "Huevos y despensa"],
 ];
 
 const CATEGORY_LABELS = Object.fromEntries(CATEGORY_CHOICES);
@@ -495,8 +498,8 @@ async function touchClientLogin(clientId) {
 async function fetchProducts(options = {}) {
     let query = state.client
         .from("products")
-        .select("id,name,category,estimated_price,is_active,created_at,updated_at")
-        .order("name");
+        .select("id,name,display_name,presentation,category,estimated_price,is_active,created_at,updated_at")
+        .order("display_name");
 
     if (!options.includeInactive) {
         query = query.eq("is_active", true);
@@ -704,15 +707,18 @@ async function updateClientProfile(values) {
 }
 
 async function saveProduct(values) {
+    const displayName = sanitizeText(values.display_name || values.name, 120);
+    const presentation = sanitizeText(values.presentation, 80);
     const payload = {
-        name: sanitizeText(values.name, 120),
-        category: CATEGORY_LABELS[values.category] ? values.category : "verduras",
+        display_name: displayName,
+        presentation,
+        category: CATEGORY_LABELS[values.category] ? values.category : "verduras_hortalizas",
         estimated_price: Math.max(0, Math.round(Number(values.estimated_price) || 0)),
         is_active: values.is_active === true,
     };
 
-    if (!payload.name) {
-        throw new Error("El nombre del producto es obligatorio.");
+    if (!displayName) {
+        throw new Error("El nombre visible del producto es obligatorio.");
     }
 
     if (values.id) {
@@ -726,6 +732,7 @@ async function saveProduct(values) {
         return;
     }
 
+    payload.name = displayName;
     await runQuery(state.client.from("products").insert(payload).select("id"));
 }
 
@@ -1122,6 +1129,8 @@ async function submitProductSave(form) {
     await saveProduct({
         id: Number(formData.get("product_id") || 0) || null,
         name: formData.get("name"),
+        display_name: formData.get("display_name"),
+        presentation: formData.get("presentation"),
         category: formData.get("category"),
         estimated_price: formData.get("estimated_price"),
         is_active: formData.get("is_active") === "1",
@@ -1619,8 +1628,16 @@ function productImageSrc(product) {
 }
 
 function productFallbackImageSrc(product) {
-    const category = CATEGORY_LABELS[product.category] ? product.category : "verduras";
+    const category = CATEGORY_LABELS[product.category] ? product.category : "verduras_hortalizas";
     return `${PRODUCT_IMAGE_BASE}/category-${productImageSlug(category)}.svg`;
+}
+
+function productDisplayName(product) {
+    return product.display_name || product.name;
+}
+
+function productSearchText(product) {
+    return [product.name, product.display_name, product.presentation].filter(Boolean).join(" ").toLowerCase();
 }
 
 function productImageSlug(value) {
@@ -1650,12 +1667,14 @@ function renderClientOrderFormPage(products, draft, sourceOrder) {
                         ${items.map((product) => {
                             const selection = selections[product.id] || {};
                             const selectedUnit = normalizeUnit(selection.requested_unit || selection.unit || "unidad");
+                            const displayName = productDisplayName(product);
                             return `
-                            <div class="product-row" data-product-name="${e(product.name.toLowerCase())}" data-product-category="${e(category)}">
+                            <div class="product-row" data-product-name="${e(productSearchText(product))}" data-product-category="${e(category)}">
                                 <div class="product-info">
                                     ${renderProductThumb(product)}
                                     <div class="product-copy">
-                                        <strong>${e(product.name)}</strong>
+                                        <strong>${e(displayName)}</strong>
+                                        ${product.presentation ? `<span class="product-presentation">${e(product.presentation)}</span>` : ""}
                                         <span class="product-price">${formatCurrency(product.estimated_price)} <small>referencia</small></span>
                                     </div>
                                 </div>
@@ -1667,13 +1686,13 @@ function renderClientOrderFormPage(products, draft, sourceOrder) {
                                         max="${MAX_QUANTITY}"
                                         inputmode="decimal"
                                         name="qty_${product.id}"
-                                        aria-label="Cantidad ${e(product.name)}"
+                                        aria-label="Cantidad ${e(displayName)}"
                                         value="${selection.quantity ? e(formatQty(selection.quantity).replace(",", ".")) : ""}"
                                         data-price="${product.estimated_price}"
                                         placeholder="0"
                                         data-quantity-input
                                     >
-                                    <select name="unit_${product.id}" aria-label="Unidad ${e(product.name)}" data-unit-input>
+                                    <select name="unit_${product.id}" aria-label="Unidad ${e(displayName)}" data-unit-input>
                                         ${UNIT_CHOICES.map(([value, label]) => `<option value="${value}" ${selectedUnit === value ? "selected" : ""}>${label}</option>`).join("")}
                                     </select>
                                 </div>
@@ -2017,8 +2036,11 @@ function renderAdminProductsPage(products) {
             <h2>Agregar nuevo producto</h2>
             <form class="inline-form grid-form" data-form="admin-product-create">
                 <input type="hidden" name="product_id" value="">
-                <label>Nombre
-                    <input type="text" name="name" required>
+                <label>Nombre visible
+                    <input type="text" name="display_name" required>
+                </label>
+                <label>Presentación
+                    <input type="text" name="presentation" placeholder="1 kg, Unidad, 250 g">
                 </label>
                 <label>Categoría
                     <select name="category">
@@ -2044,8 +2066,10 @@ function renderAdminProductsPage(products) {
                 ${products.map((product) => `
                     <form class="table-form-row product-admin-row" data-form="admin-product-update">
                         <input type="hidden" name="product_id" value="${product.id}">
+                        <input type="hidden" name="name" value="${e(product.name)}">
                         ${renderProductThumb(product, "product-thumb small")}
-                        <input type="text" name="name" value="${e(product.name)}" required>
+                        <input type="text" name="display_name" value="${e(productDisplayName(product))}" title="Nombre interno: ${e(product.name)}" required>
+                        <input type="text" name="presentation" value="${e(product.presentation)}" placeholder="1 kg">
                         <select name="category">
                             ${CATEGORY_CHOICES.map(([value, label]) => `<option value="${e(value)}" ${product.category === value ? "selected" : ""}>${e(label)}</option>`).join("")}
                         </select>
@@ -2180,7 +2204,7 @@ function renderSetupPanel(extraMessage = "") {
             ${extraMessage ? `<div class="error-box"><p>${e(extraMessage)}</p></div>` : ""}
             <div class="list-grid">
                 <p>1. Completa <code>docs/static/config.js</code> con tu <code>SUPABASE_ANON_KEY</code>.</p>
-                <p>2. Ejecuta <code>supabase/sql/009_github_pages_auth.sql</code>, <code>supabase/sql/011_admin_first_login_setup.sql</code>, <code>supabase/sql/012_catalog_units_other_request.sql</code> y <code>supabase/sql/013_client_registration_repair.sql</code> en el SQL Editor.</p>
+                <p>2. Ejecuta <code>supabase/sql/009_github_pages_auth.sql</code>, <code>supabase/sql/011_admin_first_login_setup.sql</code>, <code>supabase/sql/012_catalog_units_other_request.sql</code>, <code>supabase/sql/013_client_registration_repair.sql</code> y <code>supabase/sql/014_product_classification_presentation.sql</code> en el SQL Editor.</p>
                 <p>3. Crea las administradoras en Supabase Auth con la clave temporal acordada.</p>
                 <p>4. Publica la carpeta <code>docs/</code> desde GitHub Pages.</p>
             </div>
@@ -2198,7 +2222,7 @@ function renderErrorView(error) {
                 <p>${e(friendlyError(error))}</p>
             </div>
             <div class="list-grid">
-                <p>Archivos clave: <code>supabase/sql/009_github_pages_auth.sql</code>, <code>supabase/sql/011_admin_first_login_setup.sql</code>, <code>supabase/sql/012_catalog_units_other_request.sql</code> y <code>supabase/sql/013_client_registration_repair.sql</code></p>
+                <p>Archivos clave: <code>supabase/sql/009_github_pages_auth.sql</code>, <code>supabase/sql/011_admin_first_login_setup.sql</code>, <code>supabase/sql/012_catalog_units_other_request.sql</code>, <code>supabase/sql/013_client_registration_repair.sql</code> y <code>supabase/sql/014_product_classification_presentation.sql</code></p>
                 <p>Config pública: <code>docs/static/config.js</code></p>
                 <p>Publicación: GitHub Pages apuntando a la carpeta <code>docs/</code></p>
             </div>
@@ -2250,7 +2274,7 @@ function filterOrderRows() {
     for (const row of document.querySelectorAll(".product-row")) {
         const name = row.dataset.productName || "";
         const isVisible = !term || name.includes(term);
-        row.style.display = isVisible ? "grid" : "none";
+        row.style.display = isVisible ? "" : "none";
         if (isVisible) {
             visibleRows += 1;
         }
@@ -2745,7 +2769,7 @@ function compareProducts(a, b) {
     if (categoryDiff !== 0) {
         return categoryDiff;
     }
-    return a.name.localeCompare(b.name, "es");
+    return productDisplayName(a).localeCompare(productDisplayName(b), "es");
 }
 
 function categoryRank(category) {
@@ -2821,10 +2845,14 @@ function normalizeClient(row) {
 }
 
 function normalizeProduct(row) {
+    const name = String(row.name || "").trim();
+    const displayName = sanitizeText(row.display_name || name, 120);
     return {
         id: Number(row.id),
-        name: String(row.name || "").trim(),
-        category: CATEGORY_LABELS[row.category] ? row.category : "verduras",
+        name,
+        display_name: displayName,
+        presentation: sanitizeText(row.presentation, 80),
+        category: CATEGORY_LABELS[row.category] ? row.category : "verduras_hortalizas",
         estimated_price: Math.round(Number(row.estimated_price) || 0),
         is_active: Boolean(row.is_active),
         created_at: row.created_at || "",
@@ -2973,6 +3001,9 @@ function friendlyError(error) {
     }
     if (/column .*billing_type.*does not exist/i.test(raw)) {
         return "Falta ejecutar supabase/sql/013_client_registration_repair.sql en Supabase para completar el registro de clientas.";
+    }
+    if (/column .*display_name.*does not exist|column .*presentation.*does not exist|products_category_check|invalid input value .*products/i.test(raw)) {
+        return "Falta ejecutar supabase/sql/014_product_classification_presentation.sql en Supabase para activar las categorías nuevas y la presentación limpia.";
     }
     if (/column .*client_note.*does not exist|column .*other_request.*does not exist|column .*requested_unit.*does not exist|function .*create_secure_order/i.test(raw)) {
         return "Falta ejecutar supabase/sql/012_catalog_units_other_request.sql en Supabase. Abre el archivo, copia todo su contenido y pegalo en el SQL Editor; no pegues solo el nombre del archivo.";
