@@ -22,7 +22,111 @@ const MAX_CLIENT_NOTE_LENGTH = 500;
 const MAX_OTHER_REQUEST_LENGTH = 500;
 const MAX_QUANTITY = 999;
 const UNIT_CHOICES = [["unidad", "Unidad"], ["kg", "Kg"]];
-const PRODUCT_IMAGE_BASE = "./static/product-images";
+const PRODUCT_PHOTO_BASE = 'https://loremflickr.com';
+const PRODUCT_PHOTO_SIZE = '420/320';
+const CATEGORY_PHOTO_TERMS = {
+    frutas: 'fresh fruit,market',
+    verduras_hortalizas: 'fresh vegetables,market',
+    hojas_ensaladas: 'lettuce,salad',
+    hierbas_alinos: 'fresh herbs,market',
+    listos_cocinar: 'chopped vegetables,cooking',
+    legumbres_frutos_aceitunas: 'beans nuts olives,market',
+    huevos_despensa: 'eggs honey pantry,market',
+};
+const PRODUCT_PHOTO_TERMS = [
+    [/chirimoya|cherimoya/, 'cherimoya,fruit'],
+    [/frutilla|strawberry/, 'strawberry,fruit'],
+    [/kiwi/, 'kiwi,fruit'],
+    [/mandarina|tangerine/, 'tangerine,fruit'],
+    [/mango/, 'mango,fruit'],
+    [/manzana verde/, 'green apple,fruit'],
+    [/manzana|apple/, 'apple,fruit'],
+    [/naranja|orange/, 'orange,fruit'],
+    [/palta|avocado/, 'avocado'],
+    [/pera|pear/, 'pear,fruit'],
+    [/pina|pineapple/, 'pineapple,fruit'],
+    [/platano|banana/, 'banana,fruit'],
+    [/uva|grape/, 'grapes,fruit'],
+    [/arandano|blueberry/, 'blueberry,fruit'],
+    [/ciruela|plum/, 'plum,fruit'],
+    [/durazno|nectarin|peach/, 'peach,fruit'],
+    [/frambuesa|raspberry/, 'raspberry,fruit'],
+    [/melon/, 'melon,fruit'],
+    [/pepino dulce/, 'pepino melon,fruit'],
+    [/sandia|watermelon/, 'watermelon,fruit'],
+    [/tuna/, 'prickly pear,fruit'],
+    [/acelga|chard/, 'swiss chard'],
+    [/alcachofa|artichoke/, 'artichoke'],
+    [/ajo|garlic/, 'garlic'],
+    [/betarraga|beterraga|beet/, 'beetroot'],
+    [/brocoli|broccoli/, 'broccoli'],
+    [/bruselas|brucelas|brussels/, 'brussels sprouts'],
+    [/brotes de alfalfa|alfalfa/, 'alfalfa sprouts'],
+    [/camote|sweet potato/, 'sweet potato'],
+    [/cebolla en escabeche/, 'pickled onion'],
+    [/cebolla morada/, 'red onion'],
+    [/cebolla|onion/, 'onion'],
+    [/champinon|champinones|mushroom/, 'mushrooms'],
+    [/coliflor|cauliflower/, 'cauliflower'],
+    [/choclo|corn/, 'corn on the cob'],
+    [/espinaca|spinach/, 'spinach'],
+    [/lechuga|lettuce/, 'lettuce'],
+    [/limon|lemon/, 'lemon'],
+    [/mizuna/, 'mizuna'],
+    [/apio picado/, 'chopped celery'],
+    [/apio|celery/, 'celery'],
+    [/\bpapa\b|\bpapas\b|potato/, 'potatoes'],
+    [/pepino|cucumber/, 'cucumber'],
+    [/pimenton rojo|red pepper/, 'red bell pepper'],
+    [/pimenton verde|green pepper/, 'green bell pepper'],
+    [/pimenton amarillo|yellow pepper/, 'yellow bell pepper'],
+    [/porotos verdes picados/, 'green beans chopped'],
+    [/porotos verdes|green beans/, 'green beans'],
+    [/rabano|radish/, 'radish'],
+    [/repollo picado/, 'shredded cabbage'],
+    [/repollo morado/, 'red cabbage'],
+    [/repollo|cabbage/, 'cabbage'],
+    [/pulpa de tomate/, 'tomato sauce jar'],
+    [/tomate cherry/, 'cherry tomatoes'],
+    [/tomate|tomato/, 'tomatoes'],
+    [/zanahoria|carrot/, 'carrots'],
+    [/zapallo butternut|butternut/, 'butternut squash'],
+    [/zapallo italiano|zucchini/, 'zucchini'],
+    [/zapallo|squash/, 'pumpkin squash'],
+    [/cazuela/, 'soup vegetables'],
+    [/carbonada/, 'mixed vegetables'],
+    [/arveja|pea/, 'green peas'],
+    [/haba|broad beans/, 'broad beans'],
+    [/chapsui|chop suey/, 'stir fry vegetables'],
+    [/mongoliana/, 'stir fry vegetables'],
+    [/dientes de dragon|bean sprouts/, 'bean sprouts'],
+    [/aji verde|green chili/, 'green chili pepper'],
+    [/cebollin|spring onion/, 'spring onion'],
+    [/ciboulette|chives/, 'chives'],
+    [/cilantro|coriander/, 'cilantro herbs'],
+    [/perejil|parsley/, 'parsley herbs'],
+    [/puerro|leek/, 'leeks'],
+    [/albahaca|basil/, 'basil herbs'],
+    [/jengibre|genjibre|ginger/, 'ginger root'],
+    [/garbanzo|chickpea/, 'chickpeas'],
+    [/lenteja|lentil/, 'lentils'],
+    [/pinon|pine nuts/, 'pine nuts'],
+    [/poroto|bean/, 'beans'],
+    [/aceituna|olive/, 'olives'],
+    [/almendra|almond/, 'almonds'],
+    [/nuez|nueces|walnut/, 'walnuts'],
+    [/mani|peanut/, 'peanuts'],
+    [/huevo de codorniz|quail egg/, 'quail eggs'],
+    [/huevo|egg/, 'eggs'],
+    [/miel|honey/, 'honey jar'],
+    [/mermelada|jam/, 'jam jar'],
+    [/loco cocido|seafood/, 'cooked seafood'],
+    [/queque|cake/, 'homemade cake'],
+    [/alfajor/, 'alfajor cookies'],
+    [/cuchufli/, 'wafer roll'],
+    [/bolsa de basura/, 'trash bags'],
+    [/longaniza|sausage/, 'smoked sausage'],
+];
 const TEMP_ADMIN_PASSWORD = "verduleria";
 const SUPABASE_TIMEOUT_MS = 20000;
 
@@ -1603,10 +1707,10 @@ function renderClientDashboardPage(client, dashboard, month) {
                 <h2>Frescura que se siente</h2>
                 <p>Productos escogidos para llegar directo a tu casa.</p>
             </div>
-            <div class="promo-produce" aria-hidden="true">
-                <img src="./static/product-images/lechuga-escarola-unidad.svg" alt="">
-                <img src="./static/product-images/tomates-kg.svg" alt="">
-                <img src="./static/product-images/brocoli-unidad.svg" alt="">
+            <div class='promo-produce' aria-hidden='true'>
+                <img src='${e(productPhotoUrl('lettuce,fresh', 3101))}' alt=''>
+                <img src='${e(productPhotoUrl('tomatoes,market', 3102))}' alt=''>
+                <img src='${e(productPhotoUrl('broccoli,vegetable', 3103))}' alt=''>
             </div>
         </section>
 
@@ -1736,17 +1840,48 @@ function renderAdminOrderItemEditRows(items) {
         : `<tr><td colspan="6">Sin productos del catálogo. Revisa el campo Otro.</td></tr>`;
 }
 
-function renderProductThumb(product, className = "product-thumb") {
-    return `<img class="${e(className)}" src="${e(productImageSrc(product))}" alt="" loading="lazy" onerror="this.onerror=null;this.src='${e(productFallbackImageSrc(product))}'">`;
+function renderProductThumb(product, className = 'product-thumb') {
+    return `<img class='${e(className)}' src='${e(productImageSrc(product))}' alt='${e(productDisplayName(product))}' loading='lazy' referrerpolicy='no-referrer' data-fallback='${e(productFallbackImageSrc(product))}' onerror='this.onerror=null;this.src=this.dataset.fallback'>`;
 }
 
 function productImageSrc(product) {
-    return `${PRODUCT_IMAGE_BASE}/${productImageSlug(product.name)}.svg`;
+    return productPhotoUrl(productPhotoTerms(product), productPhotoLock(product));
 }
 
 function productFallbackImageSrc(product) {
-    const category = CATEGORY_LABELS[product.category] ? product.category : "verduras_hortalizas";
-    return `${PRODUCT_IMAGE_BASE}/category-${productImageSlug(category)}.svg`;
+    const category = CATEGORY_LABELS[product.category] ? product.category : 'verduras_hortalizas';
+    return productPhotoUrl(CATEGORY_PHOTO_TERMS[category] || 'fresh produce,market', productPhotoLock({ id: category }));
+}
+
+function productPhotoTerms(product) {
+    const haystack = normalizePhotoText([product.name, product.display_name, product.presentation].filter(Boolean).join(' '));
+    const match = PRODUCT_PHOTO_TERMS.find(([pattern]) => pattern.test(haystack));
+    return match ? match[1] : CATEGORY_PHOTO_TERMS[product.category] || 'fresh produce,market';
+}
+
+function productPhotoLock(product) {
+    const source = String(product?.id || product?.name || product?.display_name || product || 'producto');
+    let hash = 0;
+    for (let index = 0; index < source.length; index += 1) {
+        hash = ((hash << 5) - hash + source.charCodeAt(index)) | 0;
+    }
+    return 1000 + (Math.abs(hash) % 9000);
+}
+
+function productPhotoUrl(terms, lock) {
+    const cleanTerms = normalizePhotoText(terms || 'fresh produce,market')
+        .replace(/[^a-z0-9, ]+/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .replace(/ /g, '+') || 'fresh+produce,market';
+    return `${PRODUCT_PHOTO_BASE}/${PRODUCT_PHOTO_SIZE}/${cleanTerms}?lock=${encodeURIComponent(String(lock))}`;
+}
+
+function normalizePhotoText(value) {
+    return String(value || '')
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase();
 }
 
 function productDisplayName(product) {
@@ -1754,16 +1889,16 @@ function productDisplayName(product) {
 }
 
 function productSearchText(product) {
-    return [product.name, product.display_name, product.presentation].filter(Boolean).join(" ").toLowerCase();
+    return [product.name, product.display_name, product.presentation].filter(Boolean).join(' ').toLowerCase();
 }
 
 function productImageSlug(value) {
-    return String(value || "producto")
-        .normalize("NFD")
-        .replace(/[\u0300-\u036f]/g, "")
+    return String(value || 'producto')
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
         .toLowerCase()
-        .replace(/[^a-z0-9]+/g, "-")
-        .replace(/^-+|-+$/g, "") || "producto";
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '') || 'producto';
 }
 
 function renderClientOrderFormPage(products, draft, sourceOrder) {
@@ -1778,7 +1913,7 @@ function renderClientOrderFormPage(products, draft, sourceOrder) {
                 return "";
             }
             return `
-                <div class="panel product-group" id="cat-${e(productImageSlug(category))}">
+                <div class='panel product-group' id='cat-${e(productImageSlug(category))}' data-product-group data-category='${e(category)}'>
                     <h2>${e(label)}</h2>
                     <div class="product-table">
                         ${items.map((product) => {
@@ -1786,7 +1921,7 @@ function renderClientOrderFormPage(products, draft, sourceOrder) {
                             const selectedUnit = normalizeUnit(selection.requested_unit || selection.unit || "unidad");
                             const displayName = productDisplayName(product);
                             return `
-                            <div class="product-row" data-product-name="${e(productSearchText(product))}" data-product-category="${e(category)}">
+                            <div class='product-row' data-product-name='${e(productSearchText(product))}' data-product-category='${e(category)}'>
                                 <div class="product-info">
                                     ${renderProductThumb(product)}
                                     <div class="product-copy">
@@ -1834,7 +1969,7 @@ function renderClientOrderFormPage(products, draft, sourceOrder) {
             <input type="search" data-product-search placeholder="Buscar frutas, verduras y más..." aria-label="Buscar producto">
         </div>
         <nav class="category-tabs" aria-label="Categorías del catálogo">
-            ${CATEGORY_CHOICES.map(([value, label]) => `<button class="category-chip" type="button" data-action="focus-category" data-target="cat-${e(productImageSlug(value))}">${e(label)}</button>`).join("")}
+            ${CATEGORY_CHOICES.map(([value, label]) => `<button class='category-chip' type='button' data-action='focus-category' data-target='cat-${e(productImageSlug(value))}' data-category-nav='${e(value)}'>${e(label)}</button>`).join('')}
         </nav>
         <form class="order-layout" data-form="client-order-create" data-order-form data-delivery-fee="${DELIVERY_FEE}">
             <input type="hidden" name="source_order_id" value="${sourceOrder?.id || ""}">
@@ -2382,21 +2517,37 @@ function refreshOrderSummary() {
 }
 
 function filterOrderRows() {
-    const search = document.querySelector("[data-product-search]");
+    const search = document.querySelector('[data-product-search]');
     if (!search) {
         return;
     }
-    const term = search.value.trim().toLowerCase();
+    const term = normalizePhotoText(search.value.trim());
     let visibleRows = 0;
-    for (const row of document.querySelectorAll(".product-row")) {
-        const name = row.dataset.productName || "";
+    const visibleCategories = new Set();
+
+    for (const row of document.querySelectorAll('.product-row')) {
+        const name = normalizePhotoText(row.dataset.productName || '');
         const isVisible = !term || name.includes(term);
-        row.style.display = isVisible ? "" : "none";
+        row.hidden = !isVisible;
         if (isVisible) {
             visibleRows += 1;
+            if (row.dataset.productCategory) {
+                visibleCategories.add(row.dataset.productCategory);
+            }
         }
     }
-    const emptySearch = document.querySelector("[data-product-search-empty]");
+
+    for (const group of document.querySelectorAll('[data-product-group]')) {
+        const category = group.dataset.category || '';
+        group.hidden = !visibleCategories.has(category);
+    }
+
+    for (const button of document.querySelectorAll('[data-category-nav]')) {
+        const category = button.dataset.categoryNav || '';
+        button.hidden = !visibleCategories.has(category);
+    }
+
+    const emptySearch = document.querySelector('[data-product-search-empty]');
     if (emptySearch) {
         emptySearch.hidden = visibleRows > 0;
     }
