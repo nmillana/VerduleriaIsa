@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="320" height="240" viewBox="0 0 320 240" role="img" aria-labelledby="title desc">
+<title>Piña Pelada</title>
+<desc>Ilustracion simple para Piña Pelada.</desc>
+<defs>
+  <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+    <stop offset="0" stop-color="#fff8df"/>
+    <stop offset="1" stop-color="#f6c953"/>
+  </linearGradient>
+  <filter id="soft" x="-20%" y="-20%" width="140%" height="140%">
+    <feDropShadow dx="0" dy="8" stdDeviation="9" flood-color="#2e2618" flood-opacity="0.16"/>
+  </filter>
+</defs>
+<rect width="320" height="240" rx="28" fill="url(#bg)"/>
+<circle cx="52" cy="45" r="38" fill="rgba(255,255,255,0.35)"/>
+<circle cx="273" cy="58" r="24" fill="rgba(255,255,255,0.22)"/>
+<g filter="url(#soft)">
+<ellipse cx="160" cy="164" rx="80" ry="18" fill="rgba(58,45,29,0.12)"/>
+<path d="M160 66 L196 110 L188 170 L132 170 L124 110 Z" fill="#e2aa28"/>
+<path d="M132 112 L188 168 M188 112 L132 168 M160 70 L160 170" stroke="#9a7622" stroke-width="5" opacity="0.5"/>
+<path d="M160 72 C132 40 142 38 174 70" fill="none" stroke="#2f8f4f" stroke-width="8" stroke-linecap="round"/>
+<path d="M160 72 C150 40 160 38 183 70" fill="none" stroke="#2f8f4f" stroke-width="8" stroke-linecap="round"/>
+<path d="M160 72 C170 40 180 38 193 70" fill="none" stroke="#2f8f4f" stroke-width="8" stroke-linecap="round"/>
+<path d="M160 72 C188 40 198 38 202 70" fill="none" stroke="#2f8f4f" stroke-width="8" stroke-linecap="round"/>
+</g>
+<rect x="34" y="184" width="252" height="40" rx="16" fill="rgba(255,255,255,0.58)"/>
+<text x="160" y="205" text-anchor="middle" font-family="Arial, sans-serif" font-size="17" font-weight="700" fill="#4d3b12">Piña Pelada</text>
+</svg>

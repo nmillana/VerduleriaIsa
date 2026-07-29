@@ -524,7 +524,7 @@ textarea {
     grid-template-columns: minmax(0, 1fr) minmax(172px, 190px);
     gap: 0.8rem;
     align-items: center;
-    min-height: 78px;
+    min-height: 96px;
     padding: 0.8rem 0.9rem;
     border-radius: 8px;
     background: linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(248, 246, 240, 0.98));
@@ -532,10 +532,39 @@ textarea {
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7);
 }
 
+.product-info {
+    display: grid;
+    grid-template-columns: 64px minmax(0, 1fr);
+    gap: 0.75rem;
+    align-items: center;
+    min-width: 0;
+}
+
+.product-copy {
+    min-width: 0;
+}
+
 .product-row strong {
     display: block;
     margin-bottom: 0.2rem;
     font-weight: 600;
+}
+
+.product-thumb {
+    width: 64px;
+    height: 64px;
+    border-radius: 10px;
+    object-fit: cover;
+    background: #fff;
+    border: 1px solid rgba(20, 105, 76, 0.12);
+    box-shadow: 0 8px 16px rgba(24, 66, 46, 0.12);
+}
+
+.product-thumb.small {
+    width: 48px;
+    height: 48px;
+    border-radius: 8px;
+    justify-self: center;
 }
 
 .product-controls {
@@ -586,6 +615,10 @@ textarea {
     grid-template-columns: 2fr 1fr 1fr 1fr auto;
     gap: 0.75rem;
     align-items: center;
+}
+
+.product-admin-row {
+    grid-template-columns: 56px minmax(170px, 2fr) minmax(130px, 1fr) 120px 120px auto;
 }
 
 .checkbox-inline {
@@ -919,8 +952,21 @@ textarea {
 
     .product-row {
         grid-template-columns: minmax(0, 1fr);
-        min-height: 72px;
+        min-height: 86px;
         padding: 0.75rem;
+    }
+
+    .product-info {
+        grid-template-columns: 56px minmax(0, 1fr);
+    }
+
+    .product-thumb {
+        width: 56px;
+        height: 56px;
+    }
+
+    .product-thumb.small {
+        justify-self: start;
     }
 
     .product-controls {

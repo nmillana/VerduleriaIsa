@@ -18,6 +18,7 @@ const MAX_CLIENT_NOTE_LENGTH = 500;
 const MAX_OTHER_REQUEST_LENGTH = 500;
 const MAX_QUANTITY = 999;
 const UNIT_CHOICES = [["unidad", "Unidad"], ["kg", "Kg"]];
+const PRODUCT_IMAGE_BASE = "./static/product-images";
 const TEMP_ADMIN_PASSWORD = "verduleria";
 const SUPABASE_TIMEOUT_MS = 20000;
 
@@ -1562,6 +1563,28 @@ function renderAdminOrderItemEditRows(items) {
         : `<tr><td colspan="6">Sin productos del catálogo. Revisa el campo Otro.</td></tr>`;
 }
 
+function renderProductThumb(product, className = "product-thumb") {
+    return `<img class="${e(className)}" src="${e(productImageSrc(product))}" alt="" loading="lazy" onerror="this.onerror=null;this.src='${e(productFallbackImageSrc(product))}'">`;
+}
+
+function productImageSrc(product) {
+    return `${PRODUCT_IMAGE_BASE}/${productImageSlug(product.name)}.svg`;
+}
+
+function productFallbackImageSrc(product) {
+    const category = CATEGORY_LABELS[product.category] ? product.category : "verduras";
+    return `${PRODUCT_IMAGE_BASE}/category-${productImageSlug(category)}.svg`;
+}
+
+function productImageSlug(value) {
+    return String(value || "producto")
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-+|-+$/g, "") || "producto";
+}
+
 function renderClientOrderFormPage(products, draft, sourceOrder) {
     const selections = draft.selections || {};
     const clientNote = draft.client_note || "";
@@ -1582,9 +1605,12 @@ function renderClientOrderFormPage(products, draft, sourceOrder) {
                             const selectedUnit = normalizeUnit(selection.requested_unit || selection.unit || "unidad");
                             return `
                             <div class="product-row" data-product-name="${e(product.name.toLowerCase())}">
-                                <div>
-                                    <strong>${e(product.name)}</strong>
-                                    <span class="muted">${formatCurrency(product.estimated_price)} referencia</span>
+                                <div class="product-info">
+                                    ${renderProductThumb(product)}
+                                    <div class="product-copy">
+                                        <strong>${e(product.name)}</strong>
+                                        <span class="muted">${formatCurrency(product.estimated_price)} referencia</span>
+                                    </div>
                                 </div>
                                 <div class="product-controls">
                                     <input
@@ -1965,8 +1991,9 @@ function renderAdminProductsPage(products) {
             <h2>Editar productos actuales</h2>
             <div class="table-stack">
                 ${products.map((product) => `
-                    <form class="table-form-row" data-form="admin-product-update">
+                    <form class="table-form-row product-admin-row" data-form="admin-product-update">
                         <input type="hidden" name="product_id" value="${product.id}">
+                        ${renderProductThumb(product, "product-thumb small")}
                         <input type="text" name="name" value="${e(product.name)}" required>
                         <select name="category">
                             ${CATEGORY_CHOICES.map(([value, label]) => `<option value="${e(value)}" ${product.category === value ? "selected" : ""}>${e(label)}</option>`).join("")}

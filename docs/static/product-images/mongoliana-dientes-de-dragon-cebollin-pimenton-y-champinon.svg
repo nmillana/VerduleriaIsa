@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="320" height="240" viewBox="0 0 320 240" role="img" aria-labelledby="title desc">
+<title>Mongoliana (Dientes de dragon, Cebollín, Pimentón y Champiñon)</title>
+<desc>Ilustracion simple para Mongoliana (Dientes de dragon, Cebollín, Pimentón y Champiñon).</desc>
+<defs>
+  <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+    <stop offset="0" stop-color="#eef8e8"/>
+    <stop offset="1" stop-color="#7ac96b"/>
+  </linearGradient>
+  <filter id="soft" x="-20%" y="-20%" width="140%" height="140%">
+    <feDropShadow dx="0" dy="8" stdDeviation="9" flood-color="#2e2618" flood-opacity="0.16"/>
+  </filter>
+</defs>
+<rect width="320" height="240" rx="28" fill="url(#bg)"/>
+<circle cx="52" cy="45" r="38" fill="rgba(255,255,255,0.35)"/>
+<circle cx="273" cy="58" r="24" fill="rgba(255,255,255,0.22)"/>
+<g filter="url(#soft)">
+<ellipse cx="160" cy="164" rx="80" ry="18" fill="rgba(58,45,29,0.12)"/>
+<ellipse cx="118" cy="122" rx="24" ry="62" fill="#d9483d" opacity="0.86" transform="rotate(-24 118 122)"/>
+<ellipse cx="138" cy="122" rx="24" ry="62" fill="#d9483d" opacity="0.86" transform="rotate(-8 138 122)"/>
+<ellipse cx="160" cy="122" rx="24" ry="62" fill="#d9483d" opacity="0.86" transform="rotate(8 160 122)"/>
+<ellipse cx="184" cy="122" rx="24" ry="62" fill="#d9483d" opacity="0.86" transform="rotate(-12 184 122)"/>
+<ellipse cx="206" cy="122" rx="24" ry="62" fill="#d9483d" opacity="0.86" transform="rotate(22 206 122)"/>
+<path d="M118 158 C145 124 176 113 216 83" fill="none" stroke="#1f6f47" stroke-width="7" stroke-linecap="round" opacity="0.65"/>
+</g>
+<rect x="34" y="184" width="252" height="40" rx="16" fill="rgba(255,255,255,0.58)"/>
+<text x="160" y="198" text-anchor="middle" font-family="Arial, sans-serif" font-size="17" font-weight="700" fill="#143f2d">Mongoliana Dientes de</text><text x="160" y="218" text-anchor="middle" font-family="Arial, sans-serif" font-size="17" font-weight="700" fill="#143f2d">dragon, Cebollín,</text>
+</svg>
