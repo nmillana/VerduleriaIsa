@@ -814,6 +814,7 @@ async function handleSubmit(event) {
     }
 
     setFormBusy(form, true);
+    setInlineStatus(form, "Procesando...", "notice");
     try {
         switch (kind) {
             case "client-register":
@@ -848,7 +849,7 @@ async function handleSubmit(event) {
         const message = friendlyError(error);
         setInlineStatus(form, message, "error");
         state.flash = { tone: "error", message };
-        if (kind !== "admin-login") {
+        if (!hasInlineStatus(form)) {
             await renderCurrentRoute();
         }
     } finally {
@@ -881,6 +882,9 @@ async function handleClick(event) {
                 break;
             case "open-whatsapp":
                 await openWhatsAppForOrder(Number(actionNode.dataset.orderId));
+                break;
+            case "focus-category":
+                document.getElementById(actionNode.dataset.target || "")?.scrollIntoView({ behavior: "smooth", block: "start" });
                 break;
             default:
                 break;
@@ -930,6 +934,8 @@ async function submitClientRegister(form) {
         throw new Error("Las contraseñas no coinciden.");
     }
 
+    setInlineStatus(form, "Creando tu cuenta...", "notice");
+
     const { data, error } = await withSupabaseTimeout(
         state.client.auth.signUp({
             email,
@@ -955,14 +961,20 @@ async function submitClientRegister(form) {
     if (data.session) {
         state.session = data.session;
         await syncIdentity("SIGNED_IN");
+        if (state.role !== "client") {
+            throw new Error("Tu cuenta se creó, pero no pude crear la ficha de clienta. Ejecuta supabase/sql/013_client_registration_repair.sql en Supabase y vuelve a ingresar.");
+        }
         state.flash = { tone: "notice", message: "Registro completado. Ya puedes hacer tu pedido." };
         navigate("/cliente/dashboard", true);
         return;
     }
 
+    const existingEmail = data.user && Array.isArray(data.user.identities) && data.user.identities.length === 0;
     state.flash = {
         tone: "notice",
-        message: "Revisa tu correo para confirmar la cuenta y luego ingresa.",
+        message: existingEmail
+            ? "Ese correo ya parece registrado. Ingresa con tu contraseña o revisa tu correo si falta confirmación."
+            : "Registro creado. Revisa tu correo para confirmar la cuenta y luego ingresa.",
     };
     navigate("/login-cliente", true);
 }
@@ -971,6 +983,8 @@ async function submitClientLogin(form) {
     const formData = new FormData(form);
     const email = normalizeEmail(formData.get("email"));
     const password = String(formData.get("password") || "");
+
+    setInlineStatus(form, "Validando tus datos...", "notice");
 
     const { data, error } = await withSupabaseTimeout(
         state.client.auth.signInWithPassword({ email, password }),
@@ -1295,25 +1309,28 @@ function renderFlash(flash) {
 
 function renderHomePage() {
     return `
-        <section class="access-landing">
-            <div class="access-card">
+        <section class="access-landing client-app-surface">
+            <div class="access-card auth-card">
                 <div class="access-card__logo-wrap">
                     <img class="access-card__logo" src="./static/logo-verduleria-isa.png" alt="${e(APP_NAME)}">
                 </div>
-                <p class="eyebrow">GitHub Pages</p>
-                <h1>Haz tu pedido semanal.</h1>
-                <p class="lead">Esta versión ya corre como sitio estático. Las clientas entran con correo y contraseña usando Supabase Auth.</p>
+                <p class="eyebrow">Tu feria personal</p>
+                <h1>Frescura directo a tu casa.</h1>
+                <p class="lead">Ingresa para armar tu pedido semanal de frutas, verduras y productos seleccionados.</p>
                 <form class="stacked-form access-form" data-form="client-login">
                     <label>Correo
-                        <input type="email" name="email" placeholder="clienta@correo.cl" required>
+                        <input type="email" name="email" autocomplete="email" placeholder="clienta@correo.cl" required>
                     </label>
                     <label>Contraseña
-                        <input type="password" name="password" placeholder="Tu contraseña" required>
+                        <input type="password" name="password" autocomplete="current-password" placeholder="Tu contraseña" required>
                     </label>
-                    <button class="button primary full-width" type="submit">Ingresar</button>
+                    <p class="field-note" data-inline-status>Proyecto Supabase: ${e(currentSupabaseProjectLabel())}</p>
+                    <button class="button primary full-width" type="submit" data-busy-text="Ingresando...">Ingresar</button>
                 </form>
-                <a class="button ghost full-width" href="#/registro">Crear mi usuario</a>
-                <a class="button ghost full-width admin-access" href="#/admin/login">Administrador</a>
+                <div class="access-links">
+                    <a class="button ghost full-width" href="#/registro">Crear mi usuario</a>
+                    <a class="button ghost full-width admin-access" href="#/admin/login">Administrador</a>
+                </div>
             </div>
         </section>
     `;
@@ -1321,25 +1338,29 @@ function renderHomePage() {
 
 function renderClientRegisterPage() {
     return `
-        <section class="form-panel narrow">
-            <h1>Registro de clienta</h1>
-            <p class="muted">Esta versión usa correo y contraseña para que GitHub Pages no dependa de un backend privado.</p>
+        <section class="form-panel narrow auth-panel">
+            <div class="access-card__logo-wrap compact">
+                <img class="access-card__logo" src="./static/logo-verduleria-isa.png" alt="${e(APP_NAME)}">
+            </div>
+            <p class="eyebrow">Nueva clienta</p>
+            <h1>Crear cuenta</h1>
+            <p class="muted">Completa tus datos de entrega para dejar tu cuenta lista y hacer pedidos.</p>
             <form class="stacked-form" data-form="client-register">
                 <div class="split-grid">
                     <label>Nombre
-                        <input type="text" name="name" required>
+                        <input type="text" name="name" autocomplete="name" required>
                     </label>
                     <label>Correo
-                        <input type="email" name="email" required>
+                        <input type="email" name="email" autocomplete="email" required>
                     </label>
                     <label>Contraseña
-                        <input type="password" name="password" minlength="8" required>
+                        <input type="password" name="password" minlength="8" autocomplete="new-password" required>
                     </label>
                     <label>Confirmar contraseña
-                        <input type="password" name="confirm_password" minlength="8" required>
+                        <input type="password" name="confirm_password" minlength="8" autocomplete="new-password" required>
                     </label>
                     <label>Teléfono
-                        <input type="text" name="phone" required>
+                        <input type="tel" name="phone" autocomplete="tel" required>
                     </label>
                     <label>Tipo de pago
                         <select name="billing_type">
@@ -1349,29 +1370,34 @@ function renderClientRegisterPage() {
                     </label>
                 </div>
                 <label>Dirección
-                    <textarea name="address" rows="3" required></textarea>
+                    <textarea name="address" rows="3" autocomplete="street-address" required></textarea>
                 </label>
-                <p class="field-note">Si en tu proyecto Supabase está activa la confirmación por correo, primero te llegará un email para validar la cuenta.</p>
-                <button class="button primary" type="submit">Guardar registro</button>
+                <p class="field-note" data-inline-status>Al guardar, Supabase creará tu usuario y la ficha de clienta.</p>
+                <button class="button primary" type="submit" data-busy-text="Registrando...">Guardar registro</button>
             </form>
+            <p class="muted">¿Ya tienes cuenta? <a href="#/login-cliente">Ingresa aquí</a></p>
         </section>
     `;
 }
 
 function renderClientLoginPage() {
     return `
-        <section class="form-panel narrow">
-            <h1>Ingreso de clienta</h1>
-            <p class="muted">Ingresa con tu cuenta autenticada en Supabase.</p>
+        <section class="form-panel narrow auth-panel">
+            <div class="access-card__logo-wrap compact">
+                <img class="access-card__logo" src="./static/logo-verduleria-isa.png" alt="${e(APP_NAME)}">
+            </div>
+            <p class="eyebrow">Ingreso clienta</p>
+            <h1>Hola de nuevo</h1>
+            <p class="muted">Ingresa con tu correo y contraseña.</p>
             <form class="stacked-form" data-form="client-login">
                 <label>Correo
-                    <input type="email" name="email" required>
+                    <input type="email" name="email" autocomplete="email" required>
                 </label>
                 <label>Contraseña
-                    <input type="password" name="password" required>
+                    <input type="password" name="password" autocomplete="current-password" required>
                 </label>
-                <p class="field-note">Si ya existías con este correo, la app intentará volver a enlazarte automáticamente.</p>
-                <button class="button primary" type="submit">Entrar</button>
+                <p class="field-note" data-inline-status>Si ya existías con este correo, la app intentará volver a enlazarte automáticamente.</p>
+                <button class="button primary" type="submit" data-busy-text="Entrando...">Entrar</button>
             </form>
             <p class="muted">¿Aún no estás registrada? <a href="#/registro">Crear registro</a></p>
         </section>
@@ -1417,6 +1443,7 @@ function renderAdminPasswordResetPage(admin) {
 }
 
 function renderClientDashboardPage(client, dashboard, month) {
+    const firstName = firstWord(client.name) || "clienta";
     const weeks = dashboard.weeks.length
         ? dashboard.weeks.map((week, index) => `
             <details class="week-card" ${index === 0 ? "open" : ""}>
@@ -1435,11 +1462,32 @@ function renderClientDashboardPage(client, dashboard, month) {
         : `<p class="muted">Todavía no hay pedidos en este mes.</p>`;
 
     return `
-        <section class="section-head">
+        <section class="client-home-hero">
             <div>
-                <p class="eyebrow">Panel clienta</p>
-                <h1>${e(client.name)}</h1>
-                <p class="muted">Correo: ${e(client.email)} | Dirección: ${e(client.address)}</p>
+                <p class="eyebrow">Inicio</p>
+                <h1>Hola, ${e(firstName)}.</h1>
+                <p>¿Qué frutas y verduras frescas vas a pedir hoy?</p>
+            </div>
+            <a class="button primary" href="#/cliente/pedido/nuevo">Hacer pedido</a>
+        </section>
+
+        <section class="market-promo">
+            <div>
+                <p class="eyebrow">Selección semanal</p>
+                <h2>Frescura que se siente</h2>
+                <p>Productos escogidos para llegar directo a tu casa.</p>
+            </div>
+            <div class="promo-produce" aria-hidden="true">
+                <img src="./static/product-images/lechuga-escarola-unidad.svg" alt="">
+                <img src="./static/product-images/tomates-kg.svg" alt="">
+                <img src="./static/product-images/brocoli-unidad.svg" alt="">
+            </div>
+        </section>
+
+        <section class="section-head compact-heading">
+            <div>
+                <h2>Resumen del mes</h2>
+                <p class="muted">${e(client.email)} | ${e(client.address)}</p>
             </div>
             <div class="hero-actions">
                 <form class="month-filter" data-form="client-dashboard-filter">
@@ -1447,7 +1495,6 @@ function renderClientDashboardPage(client, dashboard, month) {
                     <button class="button ghost" type="submit">Ver mes</button>
                 </form>
                 <button class="button ghost" type="button" data-action="print-month" data-month="${e(month)}">Imprimir resumen</button>
-                <a class="button primary" href="#/cliente/pedido/nuevo">Hacer pedido</a>
             </div>
         </section>
 
@@ -1597,19 +1644,19 @@ function renderClientOrderFormPage(products, draft, sourceOrder) {
                 return "";
             }
             return `
-                <div class="panel product-group">
+                <div class="panel product-group" id="cat-${e(productImageSlug(category))}">
                     <h2>${e(label)}</h2>
                     <div class="product-table">
                         ${items.map((product) => {
                             const selection = selections[product.id] || {};
                             const selectedUnit = normalizeUnit(selection.requested_unit || selection.unit || "unidad");
                             return `
-                            <div class="product-row" data-product-name="${e(product.name.toLowerCase())}">
+                            <div class="product-row" data-product-name="${e(product.name.toLowerCase())}" data-product-category="${e(category)}">
                                 <div class="product-info">
                                     ${renderProductThumb(product)}
                                     <div class="product-copy">
                                         <strong>${e(product.name)}</strong>
-                                        <span class="muted">${formatCurrency(product.estimated_price)} referencia</span>
+                                        <span class="product-price">${formatCurrency(product.estimated_price)} <small>referencia</small></span>
                                     </div>
                                 </div>
                                 <div class="product-controls">
@@ -1623,6 +1670,7 @@ function renderClientOrderFormPage(products, draft, sourceOrder) {
                                         aria-label="Cantidad ${e(product.name)}"
                                         value="${selection.quantity ? e(formatQty(selection.quantity).replace(",", ".")) : ""}"
                                         data-price="${product.estimated_price}"
+                                        placeholder="0"
                                         data-quantity-input
                                     >
                                     <select name="unit_${product.id}" aria-label="Unidad ${e(product.name)}" data-unit-input>
@@ -1638,21 +1686,24 @@ function renderClientOrderFormPage(products, draft, sourceOrder) {
         .join("");
 
     return `
-        <section class="section-head">
+        <section class="shop-head">
             <div>
                 <p class="eyebrow">Pedido semanal</p>
                 <h1>Arma tu pedido</h1>
-                <p class="muted">El total considera un despacho fijo de ${formatCurrency(DELIVERY_FEE)}. Puedes pedir cada producto por unidad o por kg.</p>
+                <p>Elige por unidad o por kg. El campo Otro queda disponible para productos fuera del listado.</p>
             </div>
             ${sourceOrder ? `<div class="badge-block">Basado en el pedido #${sourceOrder.id} del ${e(formatDateTime(sourceOrder.created_at))}</div>` : ""}
         </section>
+        <div class="shop-searchbar">
+            <input type="search" data-product-search placeholder="Buscar frutas, verduras y más..." aria-label="Buscar producto">
+        </div>
+        <nav class="category-tabs" aria-label="Categorías del catálogo">
+            ${CATEGORY_CHOICES.map(([value, label]) => `<button class="category-chip" type="button" data-action="focus-category" data-target="cat-${e(productImageSlug(value))}">${e(label)}</button>`).join("")}
+        </nav>
         <form class="order-layout" data-form="client-order-create" data-order-form data-delivery-fee="${DELIVERY_FEE}">
             <input type="hidden" name="source_order_id" value="${sourceOrder?.id || ""}">
             <aside class="panel summary-panel">
-                <h2>Resumen</h2>
-                <label>Buscar producto
-                    <input type="search" data-product-search placeholder="Ej. tomate, palta, huevo">
-                </label>
+                <h2>Carrito</h2>
                 <div class="summary-stats">
                     <div>
                         <span class="muted">Productos elegidos</span>
@@ -1678,7 +1729,7 @@ function renderClientOrderFormPage(products, draft, sourceOrder) {
                     <textarea name="client_note" rows="3" maxlength="${MAX_CLIENT_NOTE_LENGTH}" data-client-note>${e(clientNote)}</textarea>
                 </label>
                 <p class="field-note" data-draft-status>Carrito guardado en este dispositivo. El campo Otro se revisa manualmente y no suma precio estimado.</p>
-                <button class="button primary full-width" type="submit">Enviar pedido</button>
+                <button class="button primary full-width" type="submit" data-busy-text="Enviando...">Enviar pedido</button>
             </aside>
             <section class="product-columns">
                 <p class="empty-search" data-product-search-empty hidden>No hay productos con esa búsqueda.</p>
@@ -2129,7 +2180,7 @@ function renderSetupPanel(extraMessage = "") {
             ${extraMessage ? `<div class="error-box"><p>${e(extraMessage)}</p></div>` : ""}
             <div class="list-grid">
                 <p>1. Completa <code>docs/static/config.js</code> con tu <code>SUPABASE_ANON_KEY</code>.</p>
-                <p>2. Ejecuta <code>supabase/sql/009_github_pages_auth.sql</code>, <code>supabase/sql/011_admin_first_login_setup.sql</code> y <code>supabase/sql/012_catalog_units_other_request.sql</code> en el SQL Editor.</p>
+                <p>2. Ejecuta <code>supabase/sql/009_github_pages_auth.sql</code>, <code>supabase/sql/011_admin_first_login_setup.sql</code>, <code>supabase/sql/012_catalog_units_other_request.sql</code> y <code>supabase/sql/013_client_registration_repair.sql</code> en el SQL Editor.</p>
                 <p>3. Crea las administradoras en Supabase Auth con la clave temporal acordada.</p>
                 <p>4. Publica la carpeta <code>docs/</code> desde GitHub Pages.</p>
             </div>
@@ -2147,7 +2198,7 @@ function renderErrorView(error) {
                 <p>${e(friendlyError(error))}</p>
             </div>
             <div class="list-grid">
-                <p>Archivos clave: <code>supabase/sql/009_github_pages_auth.sql</code>, <code>supabase/sql/011_admin_first_login_setup.sql</code> y <code>supabase/sql/012_catalog_units_other_request.sql</code></p>
+                <p>Archivos clave: <code>supabase/sql/009_github_pages_auth.sql</code>, <code>supabase/sql/011_admin_first_login_setup.sql</code>, <code>supabase/sql/012_catalog_units_other_request.sql</code> y <code>supabase/sql/013_client_registration_repair.sql</code></p>
                 <p>Config pública: <code>docs/static/config.js</code></p>
                 <p>Publicación: GitHub Pages apuntando a la carpeta <code>docs/</code></p>
             </div>
@@ -2635,6 +2686,10 @@ function normalizeEmail(value) {
     return String(value || "").trim().toLowerCase();
 }
 
+function firstWord(value) {
+    return String(value || "").trim().split(/\s+/)[0] || "";
+}
+
 function sanitizeText(value, maxLength = 255) {
     return String(value || "").trim().slice(0, maxLength);
 }
@@ -2874,8 +2929,12 @@ function setFormBusy(form, busy) {
     }
 }
 
+function hasInlineStatus(form) {
+    return Boolean(form.querySelector("[data-inline-status], [data-admin-login-status]"));
+}
+
 function setInlineStatus(form, message, tone = "notice") {
-    const statusNode = form.querySelector("[data-admin-login-status]");
+    const statusNode = form.querySelector("[data-inline-status], [data-admin-login-status]");
     if (!statusNode) {
         return;
     }
@@ -2912,8 +2971,17 @@ function friendlyError(error) {
     if (/relation .*admins.* does not exist|public\.admins/i.test(raw)) {
         return "No encontré la tabla admins en Supabase. Revisa que hayas ejecutado el esquema inicial en el SQL Editor.";
     }
+    if (/column .*billing_type.*does not exist/i.test(raw)) {
+        return "Falta ejecutar supabase/sql/013_client_registration_repair.sql en Supabase para completar el registro de clientas.";
+    }
     if (/column .*client_note.*does not exist|column .*other_request.*does not exist|column .*requested_unit.*does not exist|function .*create_secure_order/i.test(raw)) {
         return "Falta ejecutar supabase/sql/012_catalog_units_other_request.sql en Supabase. Abre el archivo, copia todo su contenido y pegalo en el SQL Editor; no pegues solo el nombre del archivo.";
+    }
+    if (/database error saving new user|error saving user|violates row-level security.*clients|new row violates row-level security/i.test(raw)) {
+        return "Supabase no pudo completar el registro de clienta. Ejecuta supabase/sql/013_client_registration_repair.sql y vuelve a intentar.";
+    }
+    if (/security purposes|only request this after/i.test(raw)) {
+        return "Supabase está limitando temporalmente ese intento por seguridad. Espera el tiempo indicado y vuelve a probar.";
     }
     if (/failed to fetch|networkerror|load failed|no se puede resolver|err_/i.test(raw)) {
         return "No pude conectar con Supabase. Revisa internet, el proyecto configurado y vuelve a intentar.";
