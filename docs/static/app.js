@@ -22,110 +22,115 @@ const MAX_CLIENT_NOTE_LENGTH = 500;
 const MAX_OTHER_REQUEST_LENGTH = 500;
 const MAX_QUANTITY = 999;
 const UNIT_CHOICES = [["unidad", "Unidad"], ["kg", "Kg"]];
-const PRODUCT_PHOTO_BASE = 'https://loremflickr.com';
-const PRODUCT_PHOTO_SIZE = '420/320';
+const PRODUCT_PHOTO_BASE = 'https://www.themealdb.com/images/ingredients';
+const PRODUCT_PHOTO_VARIANT = '-medium';
+const PROMO_IMAGE_URL = 'https://images.unsplash.com/photo-1418669112725-fb499fb61127?auto=format&fit=crop&w=1200&q=80';
 const CATEGORY_PHOTO_TERMS = {
-    frutas: 'fresh fruit,market',
-    verduras_hortalizas: 'fresh vegetables,market',
-    hojas_ensaladas: 'lettuce,salad',
-    hierbas_alinos: 'fresh herbs,market',
-    listos_cocinar: 'chopped vegetables,cooking',
-    legumbres_frutos_aceitunas: 'beans nuts olives,market',
-    huevos_despensa: 'eggs honey pantry,market',
+    frutas: 'Apples',
+    verduras_hortalizas: 'Carrots',
+    hojas_ensaladas: 'Lettuce',
+    hierbas_alinos: 'Parsley',
+    listos_cocinar: 'Mixed Peppers',
+    legumbres_frutos_aceitunas: 'Chickpeas',
+    huevos_despensa: 'Eggs',
 };
 const PRODUCT_PHOTO_TERMS = [
-    [/chirimoya|cherimoya/, 'cherimoya,fruit'],
-    [/frutilla|strawberry/, 'strawberry,fruit'],
-    [/kiwi/, 'kiwi,fruit'],
-    [/mandarina|tangerine/, 'tangerine,fruit'],
-    [/mango/, 'mango,fruit'],
-    [/manzana verde/, 'green apple,fruit'],
-    [/manzana|apple/, 'apple,fruit'],
-    [/naranja|orange/, 'orange,fruit'],
-    [/palta|avocado/, 'avocado'],
-    [/pera|pear/, 'pear,fruit'],
-    [/pina|pineapple/, 'pineapple,fruit'],
-    [/platano|banana/, 'banana,fruit'],
-    [/uva|grape/, 'grapes,fruit'],
-    [/arandano|blueberry/, 'blueberry,fruit'],
-    [/ciruela|plum/, 'plum,fruit'],
-    [/durazno|nectarin|peach/, 'peach,fruit'],
-    [/frambuesa|raspberry/, 'raspberry,fruit'],
-    [/melon/, 'melon,fruit'],
-    [/pepino dulce/, 'pepino melon,fruit'],
-    [/sandia|watermelon/, 'watermelon,fruit'],
-    [/tuna/, 'prickly pear,fruit'],
-    [/acelga|chard/, 'swiss chard'],
-    [/alcachofa|artichoke/, 'artichoke'],
-    [/ajo|garlic/, 'garlic'],
-    [/betarraga|beterraga|beet/, 'beetroot'],
-    [/brocoli|broccoli/, 'broccoli'],
-    [/bruselas|brucelas|brussels/, 'brussels sprouts'],
-    [/brotes de alfalfa|alfalfa/, 'alfalfa sprouts'],
-    [/camote|sweet potato/, 'sweet potato'],
-    [/cebolla en escabeche/, 'pickled onion'],
-    [/cebolla morada/, 'red onion'],
-    [/cebolla|onion/, 'onion'],
-    [/champinon|champinones|mushroom/, 'mushrooms'],
-    [/coliflor|cauliflower/, 'cauliflower'],
-    [/choclo|corn/, 'corn on the cob'],
-    [/espinaca|spinach/, 'spinach'],
-    [/lechuga|lettuce/, 'lettuce'],
-    [/limon|lemon/, 'lemon'],
-    [/mizuna/, 'mizuna'],
-    [/apio picado/, 'chopped celery'],
-    [/apio|celery/, 'celery'],
-    [/\bpapa\b|\bpapas\b|potato/, 'potatoes'],
-    [/pepino|cucumber/, 'cucumber'],
-    [/pimenton rojo|red pepper/, 'red bell pepper'],
-    [/pimenton verde|green pepper/, 'green bell pepper'],
-    [/pimenton amarillo|yellow pepper/, 'yellow bell pepper'],
-    [/porotos verdes picados/, 'green beans chopped'],
-    [/porotos verdes|green beans/, 'green beans'],
-    [/rabano|radish/, 'radish'],
-    [/repollo picado/, 'shredded cabbage'],
-    [/repollo morado/, 'red cabbage'],
-    [/repollo|cabbage/, 'cabbage'],
-    [/pulpa de tomate/, 'tomato sauce jar'],
-    [/tomate cherry/, 'cherry tomatoes'],
-    [/tomate|tomato/, 'tomatoes'],
-    [/zanahoria|carrot/, 'carrots'],
-    [/zapallo butternut|butternut/, 'butternut squash'],
-    [/zapallo italiano|zucchini/, 'zucchini'],
-    [/zapallo|squash/, 'pumpkin squash'],
-    [/cazuela/, 'soup vegetables'],
-    [/carbonada/, 'mixed vegetables'],
-    [/arveja|pea/, 'green peas'],
-    [/haba|broad beans/, 'broad beans'],
-    [/chapsui|chop suey/, 'stir fry vegetables'],
-    [/mongoliana/, 'stir fry vegetables'],
-    [/dientes de dragon|bean sprouts/, 'bean sprouts'],
-    [/aji verde|green chili/, 'green chili pepper'],
-    [/cebollin|spring onion/, 'spring onion'],
-    [/ciboulette|chives/, 'chives'],
-    [/cilantro|coriander/, 'cilantro herbs'],
-    [/perejil|parsley/, 'parsley herbs'],
-    [/puerro|leek/, 'leeks'],
-    [/albahaca|basil/, 'basil herbs'],
-    [/jengibre|genjibre|ginger/, 'ginger root'],
-    [/garbanzo|chickpea/, 'chickpeas'],
-    [/lenteja|lentil/, 'lentils'],
-    [/pinon|pine nuts/, 'pine nuts'],
-    [/poroto|bean/, 'beans'],
-    [/aceituna|olive/, 'olives'],
-    [/almendra|almond/, 'almonds'],
-    [/nuez|nueces|walnut/, 'walnuts'],
-    [/mani|peanut/, 'peanuts'],
-    [/huevo de codorniz|quail egg/, 'quail eggs'],
-    [/huevo|egg/, 'eggs'],
-    [/miel|honey/, 'honey jar'],
-    [/mermelada|jam/, 'jam jar'],
-    [/loco cocido|seafood/, 'cooked seafood'],
-    [/queque|cake/, 'homemade cake'],
-    [/alfajor/, 'alfajor cookies'],
-    [/cuchufli/, 'wafer roll'],
-    [/bolsa de basura/, 'trash bags'],
-    [/longaniza|sausage/, 'smoked sausage'],
+    [/chirimoya|cherimoya/, 'Pears'],
+    [/frutilla|strawberry/, 'Strawberries'],
+    [/kiwi/, 'Kiwi'],
+    [/mandarina|tangerine/, 'Orange'],
+    [/mango/, 'Mango'],
+    [/manzana verde/, 'Bramley Apples'],
+    [/manzana|apple/, 'Apples'],
+    [/naranja|orange/, 'Orange'],
+    [/palta|avocado/, 'Avocado'],
+    [/pera|pear/, 'Pears'],
+    [/pina|pineapple/, 'Pineapple Chunks'],
+    [/platano|banana/, 'Banana'],
+    [/uva|grape/, 'Raisins'],
+    [/arandano|blueberry/, 'Blueberries'],
+    [/ciruela|plum/, 'Plum Jam'],
+    [/durazno|nectarin|peach/, 'Peaches'],
+    [/frambuesa|raspberry/, 'Raspberries'],
+    [/melon/, 'Orange'],
+    [/pepino dulce/, 'Pears'],
+    [/sandia|watermelon/, 'Orange'],
+    [/tuna/, 'Pears'],
+    [/acelga|chard/, 'Spinach'],
+    [/alcachofa|artichoke/, 'Jerusalem Artichokes'],
+    [/ajo|garlic/, 'Garlic'],
+    [/betarraga|beterraga|beet/, 'Beetroot'],
+    [/brocoli|broccoli/, 'Broccoli'],
+    [/bruselas|brucelas|brussels/, 'Brussels Sprouts'],
+    [/brotes de alfalfa|alfalfa/, 'Bean Sprouts'],
+    [/camote|sweet potato/, 'Sweet Potatoes'],
+    [/cebolla en escabeche/, 'Onion'],
+    [/cebolla morada/, 'Red Onions'],
+    [/cebolla|onion/, 'Onion'],
+    [/champinon|champinones|mushroom/, 'Mushrooms'],
+    [/coliflor|cauliflower/, 'Cabbage'],
+    [/choclo|corn/, 'Sweetcorn'],
+    [/espinaca|spinach/, 'Spinach'],
+    [/lechuga|lettuce/, 'Lettuce'],
+    [/limon|lemon/, 'Lemon'],
+    [/mizuna/, 'Rocket'],
+    [/apio picado/, 'Celery'],
+    [/apio|celery/, 'Celery'],
+    [/\bpapa\b|\bpapas\b|potato/, 'Potatoes'],
+    [/pepino|cucumber/, 'Cucumber'],
+    [/pimenton rojo|red pepper/, 'Red Pepper'],
+    [/pimenton verde|green pepper/, 'Green Pepper'],
+    [/pimenton amarillo|yellow pepper/, 'Yellow Pepper'],
+    [/porotos verdes picados/, 'Green Beans'],
+    [/porotos verdes|green beans/, 'Green Beans'],
+    [/rabano|radish/, 'Radish'],
+    [/repollo picado/, 'Cabbage'],
+    [/repollo morado/, 'Red Cabbage'],
+    [/repollo|cabbage/, 'Cabbage'],
+    [/pulpa de tomate/, 'Tomato Puree'],
+    [/tomate cherry/, 'Grape Tomatoes'],
+    [/tomate|tomato/, 'Tomato'],
+    [/zanahoria|carrot/, 'Carrots'],
+    [/zapallo butternut|butternut/, 'Butternut Squash'],
+    [/zapallo italiano|zucchini/, 'Courgettes'],
+    [/zapallo|squash/, 'Squash'],
+    [/cazuela/, 'Carrots'],
+    [/carbonada/, 'Mixed Peppers'],
+    [/arveja|pea/, 'Peas'],
+    [/haba|broad beans/, 'Broad Beans'],
+    [/chapsui|chop suey/, 'Mixed Peppers'],
+    [/mongoliana/, 'Bean Sprouts'],
+    [/dientes de dragon|bean sprouts/, 'Bean Sprouts'],
+    [/aji verde|green chili/, 'Green Chilli'],
+    [/cebollin|spring onion/, 'Spring Onions'],
+    [/ciboulette|chives/, 'Chives'],
+    [/cilantro|coriander/, 'Cilantro Leaves'],
+    [/perejil|parsley/, 'Parsley'],
+    [/puerro|leek/, 'Leek'],
+    [/albahaca|basil/, 'Fresh Basil'],
+    [/jengibre|genjibre|ginger/, 'Ginger'],
+    [/garbanzo|chickpea/, 'Chickpeas'],
+    [/lenteja|lentil/, 'Lentils'],
+    [/pinon|pine nuts/, 'Pine Nuts'],
+    [/poroto granado/, 'Pinto Beans'],
+    [/poroto|bean/, 'Pinto Beans'],
+    [/aceituna verde/, 'Green Olives'],
+    [/aceituna|olive/, 'Black Olives'],
+    [/almendra|almond/, 'Almonds'],
+    [/nuez|nueces|walnut/, 'Walnuts'],
+    [/mani|peanut/, 'Peanuts'],
+    [/huevo de codorniz|quail egg/, 'Eggs'],
+    [/huevo|egg/, 'Eggs'],
+    [/miel|honey/, 'Honey'],
+    [/mermelada.*frutilla/, 'Raspberry Jam'],
+    [/mermelada.*damasco/, 'Apricot Jam'],
+    [/mermelada|jam/, 'Jam'],
+    [/loco cocido|seafood/, 'Clams'],
+    [/queque|cake/, 'Shortcrust Pastry'],
+    [/alfajor/, 'Shortcrust Pastry'],
+    [/cuchufli/, 'Shortcrust Pastry'],
+    [/bolsa de basura/, 'Cabbage'],
+    [/longaniza|sausage/, 'Sausages'],
 ];
 const TEMP_ADMIN_PASSWORD = "verduleria";
 const SUPABASE_TIMEOUT_MS = 20000;
@@ -1707,11 +1712,9 @@ function renderClientDashboardPage(client, dashboard, month) {
                 <h2>Frescura que se siente</h2>
                 <p>Productos escogidos para llegar directo a tu casa.</p>
             </div>
-            <div class='promo-produce' aria-hidden='true'>
-                <img src='${e(productPhotoUrl('lettuce,fresh', 3101))}' alt=''>
-                <img src='${e(productPhotoUrl('tomatoes,market', 3102))}' alt=''>
-                <img src='${e(productPhotoUrl('broccoli,vegetable', 3103))}' alt=''>
-            </div>
+            <figure class='promo-produce' aria-hidden='true'>
+                <img class='promo-basket' src='${e(PROMO_IMAGE_URL)}' alt='Canasta con verduras frescas'>
+            </figure>
         </section>
 
         <section class="section-head compact-heading">
@@ -1845,36 +1848,23 @@ function renderProductThumb(product, className = 'product-thumb') {
 }
 
 function productImageSrc(product) {
-    return productPhotoUrl(productPhotoTerms(product), productPhotoLock(product));
+    return productPhotoUrl(productPhotoTerms(product));
 }
 
 function productFallbackImageSrc(product) {
     const category = CATEGORY_LABELS[product.category] ? product.category : 'verduras_hortalizas';
-    return productPhotoUrl(CATEGORY_PHOTO_TERMS[category] || 'fresh produce,market', productPhotoLock({ id: category }));
+    return productPhotoUrl(CATEGORY_PHOTO_TERMS[category] || 'Carrots');
 }
 
 function productPhotoTerms(product) {
     const haystack = normalizePhotoText([product.name, product.display_name, product.presentation].filter(Boolean).join(' '));
     const match = PRODUCT_PHOTO_TERMS.find(([pattern]) => pattern.test(haystack));
-    return match ? match[1] : CATEGORY_PHOTO_TERMS[product.category] || 'fresh produce,market';
+    return match ? match[1] : CATEGORY_PHOTO_TERMS[product.category] || 'Carrots';
 }
 
-function productPhotoLock(product) {
-    const source = String(product?.id || product?.name || product?.display_name || product || 'producto');
-    let hash = 0;
-    for (let index = 0; index < source.length; index += 1) {
-        hash = ((hash << 5) - hash + source.charCodeAt(index)) | 0;
-    }
-    return 1000 + (Math.abs(hash) % 9000);
-}
-
-function productPhotoUrl(terms, lock) {
-    const cleanTerms = normalizePhotoText(terms || 'fresh produce,market')
-        .replace(/[^a-z0-9, ]+/g, ' ')
-        .replace(/\s+/g, ' ')
-        .trim()
-        .replace(/ /g, '+') || 'fresh+produce,market';
-    return `${PRODUCT_PHOTO_BASE}/${PRODUCT_PHOTO_SIZE}/${cleanTerms}?lock=${encodeURIComponent(String(lock))}`;
+function productPhotoUrl(terms) {
+    const cleanTerms = String(terms || 'Carrots').trim() || 'Carrots';
+    return `${PRODUCT_PHOTO_BASE}/${encodeURIComponent(cleanTerms)}${PRODUCT_PHOTO_VARIANT}.png`;
 }
 
 function normalizePhotoText(value) {
