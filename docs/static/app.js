@@ -838,7 +838,9 @@ async function handleSubmit(event) {
         const message = friendlyError(error);
         setInlineStatus(form, message, "error");
         state.flash = { tone: "error", message };
-        await renderCurrentRoute();
+        if (kind !== "admin-login") {
+            await renderCurrentRoute();
+        }
     } finally {
         setFormBusy(form, false);
     }
