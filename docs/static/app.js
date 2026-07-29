@@ -2757,9 +2757,6 @@ function setFormBusy(form, busy) {
             button.removeAttribute("aria-busy");
         }
     }
-    for (const field of form.querySelectorAll("button, input, select, textarea")) {
-        field.disabled = busy;
-    }
 }
 
 function setInlineStatus(form, message, tone = "notice") {
