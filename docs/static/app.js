@@ -17,6 +17,7 @@ const STATUS_LABELS = {
 const DELIVERY_FEE = 5000;
 const APP_NAME = "Verduleria Isa";
 const CART_STORAGE_PREFIX = "verduleriaisa.cart.v1";
+const ROLE_STORAGE_KEY = "verduleriaisa.role.v1";
 const MAX_CLIENT_NOTE_LENGTH = 500;
 const MAX_OTHER_REQUEST_LENGTH = 500;
 const MAX_QUANTITY = 999;
@@ -30,6 +31,7 @@ const state = {
     session: null,
     role: null,
     profile: null,
+    profiles: { admin: null, client: null },
     route: { path: "/", query: new URLSearchParams() },
     flash: null,
     initialized: false,
@@ -112,6 +114,7 @@ async function handleAuthChange(event) {
     }
 
     if (event === "SIGNED_OUT") {
+        writePreferredRole("");
         state.flash = { tone: "notice", message: "Sesion cerrada." };
         navigate("/", true);
         return;
@@ -376,33 +379,60 @@ function redirectView(redirectTo, message = "", tone = "notice", loading = "Redi
     };
 }
 
-async function syncIdentity(event = "") {
+async function syncIdentity(event = "", options = {}) {
     if (!state.session?.user) {
         state.role = null;
         state.profile = null;
+        state.profiles = { admin: null, client: null };
         return;
     }
 
     const user = state.session.user;
+    const preferredRole = normalizeRole(options.preferredRole || preferredRoleFromRoute() || readPreferredRole());
+    const strictRole = normalizeRole(options.strictRole || "");
     const admin = await linkAndFetchAdmin(user);
-    if (admin) {
-        state.role = "admin";
-        state.profile = admin;
-        return;
+    const client = await linkAndFetchClient(user);
+    state.profiles = { admin, client };
+
+    let selectedRole = "";
+    let selectedProfile = null;
+
+    if (strictRole) {
+        selectedRole = strictRole;
+        selectedProfile = strictRole === "client" ? client : admin;
+    } else if (preferredRole === "client" && client) {
+        selectedRole = "client";
+        selectedProfile = client;
+    } else if (preferredRole === "admin" && admin) {
+        selectedRole = "admin";
+        selectedProfile = admin;
+    } else if (admin) {
+        selectedRole = "admin";
+        selectedProfile = admin;
+    } else if (client) {
+        selectedRole = "client";
+        selectedProfile = client;
     }
 
-    const client = await linkAndFetchClient(user);
-    if (client) {
-        state.role = "client";
-        state.profile = client;
-        if (event === "SIGNED_IN") {
-            await touchClientLogin(client.id);
+    if (selectedProfile) {
+        state.role = selectedRole;
+        state.profile = selectedProfile;
+        writePreferredRole(selectedRole);
+        if (selectedRole === "client" && event === "SIGNED_IN") {
+            await touchClientLogin(selectedProfile.id);
         }
         return;
     }
 
     state.role = null;
     state.profile = null;
+}
+
+function setActiveProfile(role, profile) {
+    state.role = role;
+    state.profile = profile;
+    state.profiles = { ...state.profiles, [role]: profile };
+    writePreferredRole(role);
 }
 
 async function linkAndFetchAdmin(user) {
@@ -439,7 +469,7 @@ async function linkAndFetchAdmin(user) {
 
 async function linkAndFetchClient(user) {
     const email = normalizeEmail(user.email);
-    const fields = "id,name,email,phone,address,billing_type,auth_user_id,created_at,updated_at,last_login_at";
+    const fields = clientProfileFields();
 
     let client = await fetchSingleRow(
         state.client.from("clients").select(fields).eq("auth_user_id", user.id)
@@ -694,7 +724,7 @@ async function updateClientProfile(values) {
         throw new Error("Completa nombre, teléfono y dirección.");
     }
 
-    const fields = "id,name,email,phone,address,billing_type,auth_user_id,created_at,updated_at,last_login_at";
+    const fields = clientProfileFields();
     const updatedRows = await runQuery(
         state.client
             .from("clients")
@@ -703,7 +733,41 @@ async function updateClientProfile(values) {
             .select(fields)
     );
 
-    state.profile = normalizeClient(updatedRows[0] || { ...state.profile, ...payload });
+    const client = normalizeClient(updatedRows[0] || { ...state.profile, ...payload });
+    setActiveProfile("client", client);
+}
+
+async function upsertClientProfileForCurrentUser(values) {
+    const user = state.session?.user;
+    if (!user) {
+        throw new Error("Debes ingresar con ese correo antes de crear el perfil de clienta.");
+    }
+
+    const authEmail = normalizeEmail(user.email);
+    const email = normalizeEmail(values.email);
+    const payload = {
+        auth_user_id: user.id,
+        name: sanitizeText(values.name, 120),
+        email,
+        phone: sanitizeText(values.phone, 40),
+        address: sanitizeText(values.address, 255),
+        billing_type: values.billing_type === "mensual" ? "mensual" : "semanal",
+    };
+
+    if (!payload.name || !payload.email || !payload.phone || !payload.address) {
+        throw new Error("Completa nombre, teléfono y dirección.");
+    }
+    if (payload.email !== authEmail) {
+        throw new Error("Para crear la ficha de clienta usa el mismo correo con el que ingresaste.");
+    }
+
+    const rows = await runQuery(
+        state.client
+            .from("clients")
+            .upsert(payload, { onConflict: "email" })
+            .select(clientProfileFields())
+    );
+    return normalizeClient(rows[0] || payload);
 }
 
 async function saveProduct(values) {
@@ -893,6 +957,9 @@ async function handleClick(event) {
             case "focus-category":
                 document.getElementById(actionNode.dataset.target || "")?.scrollIntoView({ behavior: "smooth", block: "start" });
                 break;
+            case "switch-role":
+                await switchRole(actionNode.dataset.role);
+                break;
             default:
                 break;
         }
@@ -941,6 +1008,16 @@ async function submitClientRegister(form) {
         throw new Error("Las contraseñas no coinciden.");
     }
 
+    if (state.session?.user && normalizeEmail(state.session.user.email) === email) {
+        setInlineStatus(form, "Creando ficha de clienta para tu usuario actual...", "notice");
+        const client = await upsertClientProfileForCurrentUser({ name, email, phone, address, billing_type: billingType });
+        setActiveProfile("client", client);
+        await touchClientLogin(client.id);
+        state.flash = { tone: "notice", message: "Perfil de clienta creado. Ya puedes hacer tu pedido." };
+        navigate("/cliente/dashboard", true);
+        return;
+    }
+
     setInlineStatus(form, "Creando tu cuenta...", "notice");
 
     const { data, error } = await withSupabaseTimeout(
@@ -967,7 +1044,7 @@ async function submitClientRegister(form) {
 
     if (data.session) {
         state.session = data.session;
-        await syncIdentity("SIGNED_IN");
+        await syncIdentity("SIGNED_IN", { preferredRole: "client", strictRole: "client" });
         if (state.role !== "client") {
             throw new Error("Tu cuenta se creó, pero no pude crear la ficha de clienta. Ejecuta supabase/sql/013_client_registration_repair.sql en Supabase y vuelve a ingresar.");
         }
@@ -977,10 +1054,27 @@ async function submitClientRegister(form) {
     }
 
     const existingEmail = data.user && Array.isArray(data.user.identities) && data.user.identities.length === 0;
+    if (existingEmail) {
+        setInlineStatus(form, "Ese correo ya existe. Verificando tu contraseña para crear la ficha de clienta...", "notice");
+        const { data: loginData, error: loginError } = await withSupabaseTimeout(
+            state.client.auth.signInWithPassword({ email, password }),
+            "Supabase no respondió al verificar ese correo. Revisa la conexión e intenta nuevamente."
+        );
+        if (!loginError && loginData.session) {
+            state.session = loginData.session;
+            const client = await upsertClientProfileForCurrentUser({ name, email, phone, address, billing_type: billingType });
+            setActiveProfile("client", client);
+            await touchClientLogin(client.id);
+            state.flash = { tone: "notice", message: "Perfil de clienta creado. Ya puedes hacer tu pedido." };
+            navigate("/cliente/dashboard", true);
+            return;
+        }
+    }
+
     state.flash = {
         tone: "notice",
         message: existingEmail
-            ? "Ese correo ya parece registrado. Ingresa con tu contraseña o revisa tu correo si falta confirmación."
+            ? "Ese correo ya existe en Supabase. Si también quieres usarlo como clienta, entra a Registro con la misma contraseña actual."
             : "Registro creado. Revisa tu correo para confirmar la cuenta y luego ingresa.",
     };
     navigate("/login-cliente", true);
@@ -1002,7 +1096,8 @@ async function submitClientLogin(form) {
     }
 
     state.session = data.session;
-    await syncIdentity("SIGNED_IN");
+    writePreferredRole("client");
+    await syncIdentity("SIGNED_IN", { preferredRole: "client", strictRole: "client" });
     if (state.role !== "client") {
         await state.client.auth.signOut();
         throw new Error(buildRoleLinkError("client", email));
@@ -1035,7 +1130,8 @@ async function submitAdminLogin(form) {
 
     setInlineStatus(form, "Credenciales aceptadas. Verificando administradora...", "notice");
     state.session = data.session;
-    await syncIdentity("SIGNED_IN");
+    writePreferredRole("admin");
+    await syncIdentity("SIGNED_IN", { preferredRole: "admin", strictRole: "admin" });
     if (state.role !== "admin") {
         await state.client.auth.signOut();
         throw new Error(buildRoleLinkError("admin", email));
@@ -1137,6 +1233,24 @@ async function submitProductSave(form) {
     });
     state.flash = { tone: "notice", message: "Producto guardado." };
     await renderCurrentRoute();
+}
+
+async function switchRole(role) {
+    const targetRole = normalizeRole(role);
+    if (!targetRole) {
+        return;
+    }
+
+    await syncIdentity("", { preferredRole: targetRole, strictRole: targetRole });
+    if (state.role !== targetRole) {
+        throw new Error(targetRole === "client" ? buildRoleLinkError("client", state.session?.user?.email) : buildRoleLinkError("admin", state.session?.user?.email));
+    }
+
+    const target = targetRole === "client"
+        ? "/cliente/dashboard"
+        : (state.profile?.must_reset_password ? "/admin/cambiar-clave" : "/admin/dashboard");
+    state.flash = { tone: "notice", message: targetRole === "client" ? "Modo clienta activo." : "Modo administrador activo." };
+    navigate(target, true);
 }
 
 async function submitAdminOrderUpdate(form) {
@@ -1283,16 +1397,18 @@ function renderNavigation() {
             `<a href="#/cliente/dashboard">Mi panel</a>`,
             `<a href="#/cliente/pedido/nuevo">Nuevo pedido</a>`,
             `<a href="#/cliente/perfil">Mi perfil</a>`,
+            state.profiles.admin ? `<button type="button" data-action="switch-role" data-role="admin">Administrador</button>` : "",
             `<button type="button" data-action="logout">Salir</button>`,
-        ].join("");
+        ].filter(Boolean).join("");
     }
 
     if (state.role === "admin") {
         if (state.profile?.must_reset_password) {
             return [
                 `<a href="#/admin/cambiar-clave">Nueva clave</a>`,
+                state.profiles.client ? `<button type="button" data-action="switch-role" data-role="client">Clienta</button>` : "",
                 `<button type="button" data-action="logout">Salir</button>`,
-            ].join("");
+            ].filter(Boolean).join("");
         }
         return [
             `<a href="#/admin/dashboard">Panel</a>`,
@@ -1300,8 +1416,9 @@ function renderNavigation() {
             `<a href="#/admin/consolidado">Consolidado</a>`,
             `<a href="#/admin/productos">Productos</a>`,
             `<a href="#/admin/clientes">Clientas</a>`,
+            state.profiles.client ? `<button type="button" data-action="switch-role" data-role="client">Clienta</button>` : "",
             `<button type="button" data-action="logout">Salir</button>`,
-        ].join("");
+        ].filter(Boolean).join("");
     }
 
     return [
@@ -2911,6 +3028,46 @@ function decorateOrderTotals(order) {
     };
 }
 
+function clientProfileFields() {
+    return "id,name,email,phone,address,billing_type,auth_user_id,created_at,updated_at,last_login_at";
+}
+
+function normalizeRole(role) {
+    return role === "admin" || role === "client" ? role : "";
+}
+
+function preferredRoleFromRoute() {
+    const path = state.route?.path || parseHashRoute().path || "";
+    if (path.startsWith("/cliente") || path === "/login-cliente" || path === "/registro") {
+        return "client";
+    }
+    if (path.startsWith("/admin")) {
+        return "admin";
+    }
+    return "";
+}
+
+function readPreferredRole() {
+    try {
+        return normalizeRole(window.localStorage?.getItem(ROLE_STORAGE_KEY));
+    } catch (error) {
+        return "";
+    }
+}
+
+function writePreferredRole(role) {
+    const normalized = normalizeRole(role);
+    try {
+        if (normalized) {
+            window.localStorage?.setItem(ROLE_STORAGE_KEY, normalized);
+        } else {
+            window.localStorage?.removeItem(ROLE_STORAGE_KEY);
+        }
+    } catch (error) {
+        // localStorage can be unavailable in strict privacy modes.
+    }
+}
+
 function currentAppUrl() {
     return window.location.href.split("#")[0];
 }
@@ -2935,7 +3092,7 @@ function buildRoleLinkError(role, email) {
         return `Ingresaste en Supabase Auth con ${normalizedEmail}, pero esta app no encontró una administradora asociada en el proyecto ${project}. Revisa la tabla admins, ejecuta supabase/sql/011_admin_first_login_setup.sql después de crear el usuario Auth y confirma que docs/static/config.js apunte al Supabase correcto.`;
     }
 
-    return `Ingresaste en Supabase Auth con ${normalizedEmail}, pero esta app no encontró una clienta asociada en el proyecto ${project}. Si ya estabas registrada, revisa que uses el mismo correo y que docs/static/config.js apunte al Supabase correcto. Si eres nueva, entra por Crear registro.`;
+    return `Ingresaste en Supabase Auth con ${normalizedEmail}, pero esta app no encontró una clienta asociada en el proyecto ${project}. Si ese correo ya existe como administradora, entra por Registro con el mismo correo y contraseña para crear también la ficha de clienta.`;
 }
 
 function setFormBusy(form, busy) {
