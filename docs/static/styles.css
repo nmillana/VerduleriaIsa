@@ -521,7 +521,7 @@ textarea {
 
 .product-row {
     display: grid;
-    grid-template-columns: 1fr 122px;
+    grid-template-columns: minmax(0, 1fr) minmax(172px, 190px);
     gap: 0.8rem;
     align-items: center;
     min-height: 78px;
@@ -538,9 +538,17 @@ textarea {
     font-weight: 600;
 }
 
-.product-row input {
-    max-width: 122px;
-    justify-self: end;
+.product-controls {
+    display: grid;
+    grid-template-columns: minmax(76px, 1fr) 92px;
+    gap: 0.5rem;
+    align-items: center;
+}
+
+.product-row input,
+.product-row select {
+    max-width: none;
+    justify-self: stretch;
     font-weight: 600;
 }
 
@@ -910,13 +918,13 @@ textarea {
     }
 
     .product-row {
-        grid-template-columns: minmax(0, 1fr) 96px;
+        grid-template-columns: minmax(0, 1fr);
         min-height: 72px;
         padding: 0.75rem;
     }
 
-    .product-row input {
-        max-width: 96px;
+    .product-controls {
+        grid-template-columns: minmax(0, 1fr) 88px;
     }
 
     .product-columns {

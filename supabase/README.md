@@ -4,7 +4,7 @@ Esta carpeta deja preparado el backend de datos para que la app use Supabase en 
 
 ## Proyecto configurado
 
-- Supabase URL: `https://wbpknauplyxshqpqzjvv.supabase.co`
+- Supabase URL: `https://keqqojqcnqporvgsaqby.supabase.co`
 - GitHub repo: `https://github.com/nmillana/VerduleriaIsa.git`
 
 ## Archivos
@@ -14,11 +14,14 @@ Esta carpeta deja preparado el backend de datos para que la app use Supabase en 
 - `sql/003_promote_admin.sql`: ya no crea admin; solo sirve para comprobar cuantos admins hay.
 - `sql/004_service_role_grants.sql`: corrige permisos si Supabase devuelve `403 permission denied`.
 - `sql/009_github_pages_auth.sql`: agrega `auth_user_id`, habilita RLS y deja la base lista para la version estatica en GitHub Pages.
+- `sql/010_secure_order_creation.sql`: crea el flujo seguro de pedidos con totales calculados en Supabase.
+- `sql/011_admin_first_login_setup.sql`: prepara administradoras y obliga cambio de clave temporal.
+- `sql/012_catalog_units_other_request.sql`: actualiza el catalogo desde `Lista de frutas y verduras 01-08-2026.xlsx`, deja inactivos los productos ausentes, agrega unidad/kg y permite el campo `Otro`.
 - `.env.example`: variables necesarias para que la app apunte a Supabase.
 
 ## Como configurarlo en tu Supabase
 
-1. Entra a `https://wbpknauplyxshqpqzjvv.supabase.co`.
+1. Entra a `https://keqqojqcnqporvgsaqby.supabase.co`.
 2. Ve a `SQL Editor`.
 3. Ejecuta `sql/001_schema.sql`.
 4. Ejecuta `sql/002_seed_products.sql`.
@@ -52,6 +55,10 @@ Para activarla:
 
 1. Completa `docs/static/config.js` con `SUPABASE_URL` y `SUPABASE_ANON_KEY`
 2. Ejecuta `sql/009_github_pages_auth.sql`
-3. Crea en Supabase Auth el usuario admin con el mismo correo que ya existe en la tabla `admins`
+3. Crea en Supabase Auth las administradoras con el mismo correo que existe en la tabla `admins`
+4. Ejecuta `sql/011_admin_first_login_setup.sql`
+5. Ejecuta `sql/012_catalog_units_other_request.sql`
+
+En el SQL Editor copia y pega el contenido completo del archivo `.sql`; no pegues solo la ruta del archivo.
 
 Con eso la pagina estatica funciona con `Supabase Auth` + `RLS`, sin exponer la `SUPABASE_SERVICE_ROLE_KEY`.

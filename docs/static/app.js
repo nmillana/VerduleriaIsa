@@ -15,7 +15,9 @@ const DELIVERY_FEE = 5000;
 const APP_NAME = "Verduleria Isa";
 const CART_STORAGE_PREFIX = "verduleriaisa.cart.v1";
 const MAX_CLIENT_NOTE_LENGTH = 500;
+const MAX_OTHER_REQUEST_LENGTH = 500;
 const MAX_QUANTITY = 999;
+const UNIT_CHOICES = [["unidad", "Unidad"], ["kg", "Kg"]];
 const TEMP_ADMIN_PASSWORD = "verduleria";
 const SUPABASE_TIMEOUT_MS = 20000;
 
@@ -94,6 +96,7 @@ function bindDomEvents() {
         void handleClick(event);
     });
     document.addEventListener("input", handleInput);
+    document.addEventListener("change", handleInput);
 }
 
 async function handleAuthChange(event) {
@@ -238,11 +241,15 @@ async function resolveRoute(route) {
         const sourceId = Number(route.query.get("source") || 0);
         const sourceOrder = sourceId ? await fetchOrderById(sourceId, { clientId: state.profile.id }) : null;
         const draft = sourceOrder
-            ? { quantities: buildRepeatQuantities(sourceOrder), client_note: sourceOrder.client_note || "" }
+            ? {
+                selections: buildRepeatSelections(sourceOrder),
+                client_note: sourceOrder.client_note || "",
+                other_request: sourceOrder.other_request || "",
+            }
             : readOrderDraft();
         return {
             title: "Nuevo pedido",
-            content: renderClientOrderFormPage(products, draft.quantities, sourceOrder, draft.client_note),
+            content: renderClientOrderFormPage(products, draft, sourceOrder),
         };
     }
 
@@ -522,7 +529,7 @@ async function fetchClientsWithOrderCounts() {
 async function fetchOrders(options = {}) {
     let query = state.client
         .from("orders")
-        .select("id,client_id,source_order_id,status,admin_note,client_note,estimated_total,actual_total,created_at,updated_at,purchased_at")
+        .select("id,client_id,source_order_id,status,admin_note,client_note,other_request,estimated_total,actual_total,created_at,updated_at,purchased_at")
         .order("created_at", { ascending: false });
 
     if (options.clientId) {
@@ -568,7 +575,7 @@ async function fetchOrders(options = {}) {
 async function fetchOrderById(orderId, options = {}) {
     let query = state.client
         .from("orders")
-        .select("id,client_id,source_order_id,status,admin_note,client_note,estimated_total,actual_total,created_at,updated_at,purchased_at")
+        .select("id,client_id,source_order_id,status,admin_note,client_note,other_request,estimated_total,actual_total,created_at,updated_at,purchased_at")
         .eq("id", orderId);
 
     if (options.clientId) {
@@ -629,7 +636,7 @@ async function fetchOrderItemsByOrderIds(orderIds) {
     const rows = await runQuery(
         state.client
             .from("order_items")
-            .select("id,order_id,product_id,product_name,quantity,estimated_price,estimated_total,actual_price,actual_total,item_note,was_missing")
+            .select("id,order_id,product_id,product_name,quantity,requested_unit,estimated_price,estimated_total,actual_price,actual_total,item_note,was_missing")
             .in("order_id", uniqueIds)
             .order("order_id", { ascending: true })
             .order("product_name", { ascending: true })
@@ -646,16 +653,18 @@ async function fetchOrderItemsByOrderIds(orderIds) {
     return map;
 }
 
-async function createOrder(quantities, sourceOrderId, clientNote) {
-    const items = buildSecureOrderItems(quantities);
-    if (!items.length) {
-        throw new Error("No hay productos seleccionados.");
+async function createOrder(selections, sourceOrderId, clientNote, otherRequest) {
+    const items = buildSecureOrderItems(selections);
+    const cleanOtherRequest = sanitizeText(otherRequest, MAX_OTHER_REQUEST_LENGTH);
+    if (!items.length && !cleanOtherRequest) {
+        throw new Error("Selecciona productos o completa el campo Otro.");
     }
 
     const { data, error } = await state.client.rpc("create_secure_order", {
         p_items: items,
         p_source_order_id: sourceOrderId || null,
         p_client_note: sanitizeText(clientNote, MAX_CLIENT_NOTE_LENGTH) || null,
+        p_other_request: cleanOtherRequest || null,
     });
 
     if (error) {
@@ -882,14 +891,14 @@ async function handleClick(event) {
 }
 
 function handleInput(event) {
-    if (event.target.matches("[data-quantity-input]")) {
+    if (event.target.matches("[data-quantity-input], [data-unit-input]")) {
         refreshOrderSummary();
         const form = event.target.closest("[data-order-form]");
         if (form) {
             persistOrderDraft(form);
         }
     }
-    if (event.target.matches("[data-client-note]")) {
+    if (event.target.matches("[data-client-note], [data-other-request]")) {
         const form = event.target.closest("[data-order-form]");
         if (form) {
             persistOrderDraft(form);
@@ -1082,10 +1091,12 @@ async function submitClientProfile(form) {
 }
 
 async function submitClientOrder(form) {
-    const quantities = collectOrderQuantities(form);
+    const formData = new FormData(form);
+    const selections = collectOrderSelections(form);
     const sourceOrderId = Number(form.querySelector('input[name="source_order_id"]')?.value || 0);
-    const clientNote = sanitizeText(new FormData(form).get("client_note"), MAX_CLIENT_NOTE_LENGTH);
-    const orderId = await createOrder(quantities, sourceOrderId || null, clientNote);
+    const clientNote = sanitizeText(formData.get("client_note"), MAX_CLIENT_NOTE_LENGTH);
+    const otherRequest = sanitizeText(formData.get("other_request"), MAX_OTHER_REQUEST_LENGTH);
+    const orderId = await createOrder(selections, sourceOrderId || null, clientNote, otherRequest);
     clearOrderDraft();
     state.flash = { tone: "notice", message: "Pedido guardado. El total fue calculado en Supabase." };
     navigate(`/cliente/pedido/${orderId}`, true);
@@ -1145,7 +1156,7 @@ async function printMonthlySummary(month) {
 async function exportConsolidationCsv(month) {
     const orders = await fetchOrders({ month, includeItems: true });
     const consolidation = buildConsolidation(orders);
-    const lines = [["semana", "producto", "cantidad", "precio_unitario", "total"]];
+    const lines = [["semana", "producto", "cantidad", "unidad", "precio_unitario", "total"]];
 
     for (const week of consolidation) {
         for (const product of week.products) {
@@ -1153,6 +1164,7 @@ async function exportConsolidationCsv(month) {
                 week.label,
                 product.product_name,
                 formatQty(product.cantidad),
+                unitLabel(product.requested_unit),
                 String(product.precio_unitario),
                 String(product.total),
             ]);
@@ -1177,11 +1189,16 @@ async function openWhatsAppForOrder(orderId) {
         throw new Error("La clienta no tiene un número válido para WhatsApp.");
     }
 
+    const itemLines = order.items.map((item) => `- ${item.product_name} x ${formatOrderItemQuantity(item)}`);
+    if (order.other_request) {
+        itemLines.push(`- Otro: ${order.other_request}`);
+    }
+
     const lines = [
         `Hola ${order.client_name || ""},`,
         `te comparto el resumen del pedido #${order.id}.`,
         "",
-        ...order.items.map((item) => `- ${item.product_name} x ${formatQty(item.quantity)}`),
+        ...itemLines,
         "",
         `Total actual/proyectado: ${formatCurrency(order.display_total)}`,
     ];
@@ -1487,6 +1504,9 @@ function renderClientProfilePage(client) {
 }
 
 function renderClientOrderCard(order) {
+    const itemLines = order.items.length
+        ? order.items.map((item) => `<li>${e(item.product_name)} x ${e(formatOrderItemQuantity(item))}</li>`).join("")
+        : `<li>${order.other_request ? "Solicitud en Otro" : "Pedido sin productos del catálogo"}</li>`;
     return `
         <article class="order-card">
             <div class="order-card__top">
@@ -1500,16 +1520,53 @@ function renderClientOrderCard(order) {
                 </div>
             </div>
             <ul class="simple-list">
-                ${order.items.map((item) => `<li>${e(item.product_name)} x ${e(formatQty(item.quantity))}</li>`).join("")}
+                ${itemLines}
             </ul>
+            ${order.other_request ? `<p class="muted">Otro: ${e(order.other_request)}</p>` : ""}
             <p class="order-total">Total: ${formatCurrency(order.display_total)}</p>
         </article>
     `;
 }
 
-function renderClientOrderFormPage(products, quantities, sourceOrder, clientNote = "") {
+function renderReadOnlyOrderItemRows(items, emptyColspan = 5) {
+    return items.length
+        ? items.map((item) => `
+            <tr>
+                <td>${e(item.product_name)}</td>
+                <td>${e(formatOrderItemQuantity(item))}</td>
+                <td>${formatCurrency(item.estimated_total)}</td>
+                <td>${item.actual_total === null ? "-" : formatCurrency(item.actual_total)}</td>
+                <td>${e(item.item_note || "-")}</td>
+            </tr>
+        `).join("")
+        : `<tr><td colspan="${emptyColspan}">Sin productos del catálogo. Revisa el campo Otro.</td></tr>`;
+}
+
+function renderAdminOrderItemEditRows(items) {
+    return items.length
+        ? items.map((item) => `
+            <tr data-item-row data-item-id="${item.id}" data-quantity="${item.quantity}">
+                <td>${e(item.product_name)}</td>
+                <td>${e(formatOrderItemQuantity(item))}</td>
+                <td>${formatCurrency(item.estimated_price)}</td>
+                <td><input type="number" min="0" name="actual_${item.id}" value="${item.actual_price === null ? "" : e(String(item.actual_price))}"></td>
+                <td>
+                    <label class="checkbox-inline">
+                        <input type="checkbox" name="missing_${item.id}" value="1" ${item.was_missing ? "checked" : ""}>
+                        sí
+                    </label>
+                </td>
+                <td><input type="text" name="note_${item.id}" value="${e(item.item_note || "")}" placeholder="Ej. se reemplazó, faltó, cambió precio"></td>
+            </tr>
+        `).join("")
+        : `<tr><td colspan="6">Sin productos del catálogo. Revisa el campo Otro.</td></tr>`;
+}
+
+function renderClientOrderFormPage(products, draft, sourceOrder) {
+    const selections = draft.selections || {};
+    const clientNote = draft.client_note || "";
+    const otherRequest = draft.other_request || "";
     const groupedProducts = groupProducts(products);
-    const hasProducts = products.length > 0;
     const groupsMarkup = CATEGORY_CHOICES
         .map(([category, label]) => {
             const items = groupedProducts.get(category) || [];
@@ -1520,59 +1577,51 @@ function renderClientOrderFormPage(products, quantities, sourceOrder, clientNote
                 <div class="panel product-group">
                     <h2>${e(label)}</h2>
                     <div class="product-table">
-                        ${items.map((product) => `
-                            <label class="product-row" data-product-name="${e(product.name.toLowerCase())}">
+                        ${items.map((product) => {
+                            const selection = selections[product.id] || {};
+                            const selectedUnit = normalizeUnit(selection.requested_unit || selection.unit || "unidad");
+                            return `
+                            <div class="product-row" data-product-name="${e(product.name.toLowerCase())}">
                                 <div>
                                     <strong>${e(product.name)}</strong>
-                                    <span class="muted">${formatCurrency(product.estimated_price)}</span>
+                                    <span class="muted">${formatCurrency(product.estimated_price)} referencia</span>
                                 </div>
-                                <input
-                                    type="number"
-                                    step="0.25"
-                                    min="0"
-                                    max="${MAX_QUANTITY}"
-                                    inputmode="decimal"
-                                    name="qty_${product.id}"
-                                    value="${quantities[product.id] ? e(formatQty(quantities[product.id]).replace(",", ".")) : ""}"
-                                    data-price="${product.estimated_price}"
-                                    data-quantity-input
-                                >
-                            </label>
-                        `).join("")}
+                                <div class="product-controls">
+                                    <input
+                                        type="number"
+                                        step="0.25"
+                                        min="0"
+                                        max="${MAX_QUANTITY}"
+                                        inputmode="decimal"
+                                        name="qty_${product.id}"
+                                        aria-label="Cantidad ${e(product.name)}"
+                                        value="${selection.quantity ? e(formatQty(selection.quantity).replace(",", ".")) : ""}"
+                                        data-price="${product.estimated_price}"
+                                        data-quantity-input
+                                    >
+                                    <select name="unit_${product.id}" aria-label="Unidad ${e(product.name)}" data-unit-input>
+                                        ${UNIT_CHOICES.map(([value, label]) => `<option value="${value}" ${selectedUnit === value ? "selected" : ""}>${label}</option>`).join("")}
+                                    </select>
+                                </div>
+                            </div>
+                        `; }).join("")}
                     </div>
                 </div>
             `;
         })
         .join("");
 
-    if (!hasProducts) {
-        return `
-            <section class="section-head">
-                <div>
-                    <p class="eyebrow">Pedido semanal</p>
-                    <h1>Arma tu pedido</h1>
-                </div>
-            </section>
-            <section class="empty-state">
-                <p class="eyebrow">Catálogo</p>
-                <h2>Sin productos activos</h2>
-                <p class="muted">Cuando la administradora active productos, aparecerán aquí.</p>
-            </section>
-        `;
-    }
-
     return `
         <section class="section-head">
             <div>
                 <p class="eyebrow">Pedido semanal</p>
                 <h1>Arma tu pedido</h1>
-                <p class="muted">El total considera un despacho fijo de ${formatCurrency(DELIVERY_FEE)}.</p>
+                <p class="muted">El total considera un despacho fijo de ${formatCurrency(DELIVERY_FEE)}. Puedes pedir cada producto por unidad o por kg.</p>
             </div>
             ${sourceOrder ? `<div class="badge-block">Basado en el pedido #${sourceOrder.id} del ${e(formatDateTime(sourceOrder.created_at))}</div>` : ""}
         </section>
-
         <form class="order-layout" data-form="client-order-create" data-order-form data-delivery-fee="${DELIVERY_FEE}">
-            <input type="hidden" name="source_order_id" value="${sourceOrder ? sourceOrder.id : ""}">
+            <input type="hidden" name="source_order_id" value="${sourceOrder?.id || ""}">
             <aside class="panel summary-panel">
                 <h2>Resumen</h2>
                 <label>Buscar producto
@@ -1596,15 +1645,18 @@ function renderClientOrderFormPage(products, quantities, sourceOrder, clientNote
                         <strong data-estimated-total>${formatCurrency(DELIVERY_FEE)}</strong>
                     </div>
                 </div>
-                <label>Observaciones
-                    <textarea name="client_note" rows="3" maxlength="${MAX_CLIENT_NOTE_LENGTH}" data-client-note>${e(clientNote || "")}</textarea>
+                <label>Otro
+                    <textarea name="other_request" rows="3" maxlength="${MAX_OTHER_REQUEST_LENGTH}" data-other-request placeholder="Pide aquí algo que no esté en el listado.">${e(otherRequest)}</textarea>
                 </label>
-                <p class="field-note" data-draft-status>Carrito guardado en este dispositivo.</p>
+                <label>Observaciones
+                    <textarea name="client_note" rows="3" maxlength="${MAX_CLIENT_NOTE_LENGTH}" data-client-note>${e(clientNote)}</textarea>
+                </label>
+                <p class="field-note" data-draft-status>Carrito guardado en este dispositivo. El campo Otro se revisa manualmente y no suma precio estimado.</p>
                 <button class="button primary full-width" type="submit">Enviar pedido</button>
             </aside>
             <section class="product-columns">
                 <p class="empty-search" data-product-search-empty hidden>No hay productos con esa búsqueda.</p>
-                ${groupsMarkup}
+                ${groupsMarkup || `<section class="empty-state"><p class="eyebrow">Catálogo</p><h2>Sin productos activos</h2><p class="muted">Puedes usar el campo Otro mientras la administradora actualiza el catálogo.</p></section>`}
             </section>
         </form>
     `;
@@ -1649,6 +1701,13 @@ function renderClientOrderDetailPage(order) {
             </section>
         ` : ""}
 
+        ${order.other_request ? `
+            <section class="panel">
+                <h2>Otro</h2>
+                <p>${e(order.other_request)}</p>
+            </section>
+        ` : ""}
+
         <section class="panel">
             <h2>Productos</h2>
             <table class="data-table">
@@ -1662,15 +1721,7 @@ function renderClientOrderDetailPage(order) {
                     </tr>
                 </thead>
                 <tbody>
-                    ${order.items.map((item) => `
-                        <tr>
-                            <td>${e(item.product_name)}</td>
-                            <td>${e(formatQty(item.quantity))}</td>
-                            <td>${formatCurrency(item.estimated_total)}</td>
-                            <td>${item.actual_total === null ? "-" : formatCurrency(item.actual_total)}</td>
-                            <td>${e(item.item_note || "-")}</td>
-                        </tr>
-                    `).join("")}
+                    ${renderReadOnlyOrderItemRows(order.items)}
                 </tbody>
             </table>
         </section>
@@ -1683,7 +1734,7 @@ function renderAdminDashboardPage(dashboard, recentOrders, month) {
             <tr>
                 <td>${e(item.product_name)}</td>
                 <td>${item.request_count}</td>
-                <td>${e(formatQty(item.total_quantity))}</td>
+                <td>${e(formatQtyUnit(item.total_quantity, item.requested_unit))}</td>
             </tr>
         `).join("")
         : `<tr><td colspan="3">Todavía no hay pedidos este mes.</td></tr>`;
@@ -1693,7 +1744,7 @@ function renderAdminDashboardPage(dashboard, recentOrders, month) {
             <tr>
                 <td>${e(item.product_name)}</td>
                 <td>${item.request_count}</td>
-                <td>${e(formatQty(item.total_quantity))}</td>
+                <td>${e(formatQtyUnit(item.total_quantity, item.requested_unit))}</td>
             </tr>
         `).join("")
         : `<tr><td colspan="3">${dashboard.top_products.length ? "Aún no hay suficientes productos distintos para separar un ranking inferior." : "Todavía no hay pedidos este mes."}</td></tr>`;
@@ -1830,6 +1881,7 @@ function renderAdminOrderDetailPage(order) {
                 <h2>Datos de entrega</h2>
                 <p>${e(order.client_address)}</p>
                 ${order.client_note ? `<p class="muted">Observaciones: ${e(order.client_note)}</p>` : ""}
+                ${order.other_request ? `<p class="muted">Otro: ${e(order.other_request)}</p>` : ""}
                 <p class="muted">Creado: ${e(formatDateTime(order.created_at))}</p>
                 <p class="muted">Teléfono: ${e(order.client_phone)}</p>
             </article>
@@ -1866,21 +1918,7 @@ function renderAdminOrderDetailPage(order) {
                     </tr>
                 </thead>
                 <tbody>
-                    ${order.items.map((item) => `
-                        <tr data-item-row data-item-id="${item.id}" data-quantity="${item.quantity}">
-                            <td>${e(item.product_name)}</td>
-                            <td>${e(formatQty(item.quantity))}</td>
-                            <td>${formatCurrency(item.estimated_price)}</td>
-                            <td><input type="number" min="0" name="actual_${item.id}" value="${item.actual_price === null ? "" : e(String(item.actual_price))}"></td>
-                            <td>
-                                <label class="checkbox-inline">
-                                    <input type="checkbox" name="missing_${item.id}" value="1" ${item.was_missing ? "checked" : ""}>
-                                    sí
-                                </label>
-                            </td>
-                            <td><input type="text" name="note_${item.id}" value="${e(item.item_note || "")}" placeholder="Ej. se reemplazó, faltó, cambió precio"></td>
-                        </tr>
-                    `).join("")}
+                    ${renderAdminOrderItemEditRows(order.items)}
                 </tbody>
             </table>
             <button class="button primary" type="submit">Guardar ajuste real</button>
@@ -2017,7 +2055,7 @@ function renderAdminConsolidationPage(consolidation, month) {
                                 ${week.products.map((product) => `
                                     <tr>
                                         <td>${e(product.product_name)}</td>
-                                        <td>${e(formatQty(product.cantidad))}</td>
+                                        <td>${e(formatQtyUnit(product.cantidad, product.requested_unit))}</td>
                                         <td>${formatCurrency(product.precio_unitario)}</td>
                                         <td>${formatCurrency(product.total)}</td>
                                     </tr>
@@ -2064,7 +2102,7 @@ function renderSetupPanel(extraMessage = "") {
             ${extraMessage ? `<div class="error-box"><p>${e(extraMessage)}</p></div>` : ""}
             <div class="list-grid">
                 <p>1. Completa <code>docs/static/config.js</code> con tu <code>SUPABASE_ANON_KEY</code>.</p>
-                <p>2. Ejecuta <code>supabase/sql/009_github_pages_auth.sql</code>, <code>supabase/sql/010_secure_order_creation.sql</code> y <code>supabase/sql/011_admin_first_login_setup.sql</code> en el SQL Editor.</p>
+                <p>2. Ejecuta <code>supabase/sql/009_github_pages_auth.sql</code>, <code>supabase/sql/011_admin_first_login_setup.sql</code> y <code>supabase/sql/012_catalog_units_other_request.sql</code> en el SQL Editor.</p>
                 <p>3. Crea las administradoras en Supabase Auth con la clave temporal acordada.</p>
                 <p>4. Publica la carpeta <code>docs/</code> desde GitHub Pages.</p>
             </div>
@@ -2082,7 +2120,7 @@ function renderErrorView(error) {
                 <p>${e(friendlyError(error))}</p>
             </div>
             <div class="list-grid">
-                <p>Archivos clave: <code>supabase/sql/009_github_pages_auth.sql</code>, <code>supabase/sql/010_secure_order_creation.sql</code> y <code>supabase/sql/011_admin_first_login_setup.sql</code></p>
+                <p>Archivos clave: <code>supabase/sql/009_github_pages_auth.sql</code>, <code>supabase/sql/011_admin_first_login_setup.sql</code> y <code>supabase/sql/012_catalog_units_other_request.sql</code></p>
                 <p>Config pública: <code>docs/static/config.js</code></p>
                 <p>Publicación: GitHub Pages apuntando a la carpeta <code>docs/</code></p>
             </div>
@@ -2186,8 +2224,10 @@ function buildAdminDashboard(orders) {
     const grouped = new Map();
     for (const order of orders) {
         for (const item of order.items || []) {
-            const bucket = grouped.get(item.product_name) || {
+            const key = `${item.product_name}||${item.requested_unit}`;
+            const bucket = grouped.get(key) || {
                 product_name: item.product_name,
+                requested_unit: item.requested_unit,
                 request_count: 0,
                 total_quantity: 0,
                 revenue: 0,
@@ -2195,7 +2235,7 @@ function buildAdminDashboard(orders) {
             bucket.request_count += 1;
             bucket.total_quantity += item.quantity;
             bucket.revenue += item.actual_total ?? item.estimated_total;
-            grouped.set(item.product_name, bucket);
+            grouped.set(key, bucket);
         }
     }
 
@@ -2208,9 +2248,9 @@ function buildAdminDashboard(orders) {
     });
 
     const topProducts = ranked.slice(0, 5);
-    const topNames = new Set(topProducts.map((row) => row.product_name));
+    const topKeys = new Set(topProducts.map((row) => `${row.product_name}||${row.requested_unit}`));
     const lowProducts = [...grouped.values()]
-        .filter((row) => !topNames.has(row.product_name))
+        .filter((row) => !topKeys.has(`${row.product_name}||${row.requested_unit}`))
         .sort((a, b) => {
             return (
                 a.request_count - b.request_count ||
@@ -2241,8 +2281,10 @@ function buildConsolidation(orders) {
 
         const products = weeks.get(label);
         for (const item of order.items || []) {
-            const current = products.get(item.product_name) || {
+            const key = `${item.product_name}||${item.requested_unit}`;
+            const current = products.get(key) || {
                 product_name: item.product_name,
+                requested_unit: item.requested_unit,
                 cantidad: 0,
                 precio_unitario: item.actual_price ?? item.estimated_price,
                 total: 0,
@@ -2251,7 +2293,7 @@ function buildConsolidation(orders) {
             current.cantidad += item.quantity;
             current.precio_unitario = unitPrice;
             current.total += Math.round(unitPrice * item.quantity);
-            products.set(item.product_name, current);
+            products.set(key, current);
         }
     }
 
@@ -2262,16 +2304,19 @@ function buildConsolidation(orders) {
     }));
 }
 
-function buildRepeatQuantities(order) {
+function buildRepeatSelections(order) {
     const values = {};
     for (const item of order.items || []) {
-        values[item.product_id] = item.quantity;
+        values[item.product_id] = {
+            quantity: item.quantity,
+            requested_unit: normalizeUnit(item.requested_unit),
+        };
     }
     return values;
 }
 
 function readOrderDraft() {
-    const emptyDraft = { quantities: {}, client_note: "" };
+    const emptyDraft = { selections: {}, client_note: "", other_request: "" };
     try {
         const raw = window.localStorage?.getItem(cartStorageKey());
         if (!raw) {
@@ -2285,11 +2330,13 @@ function readOrderDraft() {
 
 function persistOrderDraft(form) {
     try {
+        const formData = new FormData(form);
         const draft = {
-            quantities: collectOrderQuantities(form, { relaxed: true }),
-            client_note: sanitizeText(new FormData(form).get("client_note"), MAX_CLIENT_NOTE_LENGTH),
+            selections: collectOrderSelections(form, { relaxed: true }),
+            client_note: sanitizeText(formData.get("client_note"), MAX_CLIENT_NOTE_LENGTH),
+            other_request: sanitizeText(formData.get("other_request"), MAX_OTHER_REQUEST_LENGTH),
         };
-        if (!Object.keys(draft.quantities).length && !draft.client_note) {
+        if (!Object.keys(draft.selections).length && !draft.client_note && !draft.other_request) {
             window.localStorage?.removeItem(cartStorageKey());
             return;
         }
@@ -2313,20 +2360,45 @@ function cartStorageKey() {
 }
 
 function normalizeOrderDraft(raw) {
-    const draft = { quantities: {}, client_note: sanitizeText(raw?.client_note, MAX_CLIENT_NOTE_LENGTH) };
-    const quantities = raw?.quantities || {};
-    for (const [rawProductId, rawQuantity] of Object.entries(quantities)) {
+    const draft = {
+        selections: {},
+        client_note: sanitizeText(raw?.client_note, MAX_CLIENT_NOTE_LENGTH),
+        other_request: sanitizeText(raw?.other_request, MAX_OTHER_REQUEST_LENGTH),
+    };
+
+    const rawSelections = raw?.selections || {};
+    for (const [rawProductId, rawSelection] of Object.entries(rawSelections)) {
         const productId = Number(rawProductId);
-        const quantity = normalizeQuantity(rawQuantity);
+        const quantity = normalizeQuantity(rawSelection?.quantity ?? rawSelection);
         if (productId && quantity > 0) {
-            draft.quantities[productId] = quantity;
+            draft.selections[productId] = {
+                quantity,
+                requested_unit: normalizeUnit(rawSelection?.requested_unit || rawSelection?.unit),
+            };
         }
     }
+
+    const legacyQuantities = raw?.quantities || {};
+    const legacyUnits = raw?.units || {};
+    for (const [rawProductId, rawQuantity] of Object.entries(legacyQuantities)) {
+        const productId = Number(rawProductId);
+        if (draft.selections[productId]) {
+            continue;
+        }
+        const quantity = normalizeQuantity(rawQuantity);
+        if (productId && quantity > 0) {
+            draft.selections[productId] = {
+                quantity,
+                requested_unit: normalizeUnit(legacyUnits[rawProductId]),
+            };
+        }
+    }
+
     return draft;
 }
 
-function collectOrderQuantities(form, options = {}) {
-    const quantities = {};
+function collectOrderSelections(form, options = {}) {
+    const selections = {};
     for (const input of form.querySelectorAll("[data-quantity-input]")) {
         const productId = Number(input.name.replace("qty_", ""));
         const rawValue = String(input.value || "").replace(",", ".");
@@ -2340,16 +2412,21 @@ function collectOrderQuantities(form, options = {}) {
             }
             throw new Error(`La cantidad máxima por producto es ${MAX_QUANTITY}.`);
         }
-        quantities[productId] = quantity;
+        const unitNode = form.querySelector(`[name="unit_${productId}"]`);
+        selections[productId] = {
+            quantity,
+            requested_unit: normalizeUnit(unitNode?.value),
+        };
     }
-    return quantities;
+    return selections;
 }
 
-function buildSecureOrderItems(quantities) {
-    return Object.entries(quantities)
-        .map(([productId, quantity]) => ({
+function buildSecureOrderItems(selections) {
+    return Object.entries(selections)
+        .map(([productId, selection]) => ({
             product_id: Number(productId),
-            quantity: normalizeQuantity(quantity),
+            quantity: normalizeQuantity(selection?.quantity ?? selection),
+            requested_unit: normalizeUnit(selection?.requested_unit || selection?.unit),
         }))
         .filter((item) => item.product_id && item.quantity > 0 && item.quantity <= MAX_QUANTITY);
 }
@@ -2369,6 +2446,7 @@ function buildOrderPrintMarkup(order, includeClient) {
             <p>${e(formatDateTime(order.created_at))} | Estado: ${e(statusLabel(order.status))}</p>
             ${includeClient ? `<p>Clienta: ${e(order.client_name)} | ${e(order.client_email)} | ${e(order.client_phone)}</p>` : ""}
             ${order.client_note ? `<p>Observaciones: ${e(order.client_note)}</p>` : ""}
+            ${order.other_request ? `<p>Otro: ${e(order.other_request)}</p>` : ""}
             <div class="print-sheet__summary">
                 <div class="print-sheet__card">
                     <strong>${formatCurrency(order.display_subtotal)}</strong>
@@ -2394,15 +2472,7 @@ function buildOrderPrintMarkup(order, includeClient) {
                     </tr>
                 </thead>
                 <tbody>
-                    ${order.items.map((item) => `
-                        <tr>
-                            <td>${e(item.product_name)}</td>
-                            <td>${e(formatQty(item.quantity))}</td>
-                            <td>${formatCurrency(item.estimated_total)}</td>
-                            <td>${item.actual_total === null ? "-" : formatCurrency(item.actual_total)}</td>
-                            <td>${e(item.item_note || "-")}</td>
-                        </tr>
-                    `).join("")}
+                    ${renderReadOnlyOrderItemRows(order.items)}
                 </tbody>
             </table>
         </div>
@@ -2562,6 +2632,22 @@ function formatQty(value) {
     return number.toFixed(2).replace(/\.?0+$/, "").replace(".", ",");
 }
 
+function normalizeUnit(value) {
+    return value === "kg" ? "kg" : "unidad";
+}
+
+function unitLabel(value) {
+    return normalizeUnit(value) === "kg" ? "Kg" : "Unidad";
+}
+
+function formatQtyUnit(quantity, requestedUnit) {
+    return `${formatQty(quantity)} ${unitLabel(requestedUnit)}`;
+}
+
+function formatOrderItemQuantity(item) {
+    return formatQtyUnit(item.quantity, item.requested_unit);
+}
+
 function formatDateTime(value) {
     if (!value) {
         return "-";
@@ -2672,6 +2758,7 @@ function normalizeOrder(row) {
         status: String(row.status || "pendiente"),
         admin_note: String(row.admin_note || ""),
         client_note: String(row.client_note || ""),
+        other_request: String(row.other_request || ""),
         estimated_total: Math.round(Number(row.estimated_total) || 0),
         actual_total: row.actual_total === null || row.actual_total === undefined ? null : Math.round(Number(row.actual_total)),
         created_at: row.created_at || "",
@@ -2687,6 +2774,7 @@ function normalizeOrderItem(row) {
         product_id: Number(row.product_id),
         product_name: String(row.product_name || ""),
         quantity: Number(row.quantity || 0),
+        requested_unit: normalizeUnit(row.requested_unit),
         estimated_price: Math.round(Number(row.estimated_price) || 0),
         estimated_total: Math.round(Number(row.estimated_total) || 0),
         actual_price: row.actual_price === null || row.actual_price === undefined ? null : Math.round(Number(row.actual_price)),
@@ -2796,6 +2884,9 @@ function friendlyError(error) {
     }
     if (/relation .*admins.* does not exist|public\.admins/i.test(raw)) {
         return "No encontré la tabla admins en Supabase. Revisa que hayas ejecutado el esquema inicial en el SQL Editor.";
+    }
+    if (/column .*client_note.*does not exist|column .*other_request.*does not exist|column .*requested_unit.*does not exist|function .*create_secure_order/i.test(raw)) {
+        return "Falta ejecutar supabase/sql/012_catalog_units_other_request.sql en Supabase. Abre el archivo, copia todo su contenido y pegalo en el SQL Editor; no pegues solo el nombre del archivo.";
     }
     if (/failed to fetch|networkerror|load failed|no se puede resolver|err_/i.test(raw)) {
         return "No pude conectar con Supabase. Revisa internet, el proyecto configurado y vuelve a intentar.";

@@ -12,13 +12,13 @@ La app puede trabajar de dos formas:
 ## Donde quedan los datos
 
 - En modo local: `data/verduleria.sqlite3`
-- En modo Supabase: `https://wbpknauplyxshqpqzjvv.supabase.co`
+- En modo Supabase: `https://keqqojqcnqporvgsaqby.supabase.co`
 - Clave de sesiones local: `data/session.secret`
 - Variables privadas locales: `.env` y no se sube al repo
 
 ## Ejecutar localmente
 
-1. Abre una terminal en `c:\Test`
+1. Abre una terminal en `C:\Verduleria\Test`
 2. Si usaras Supabase, ejecuta primero los SQL de `supabase/sql/`
 3. Ejecuta `py app.py`
 4. Abre `http://127.0.0.1:8000`
@@ -81,15 +81,18 @@ Esta version ya no depende del backend Flask y usa:
 - `supabase/sql/009_github_pages_auth.sql` para enlazar `auth.users` con `clients` y `admins`
 - `supabase/sql/010_secure_order_creation.sql` para crear pedidos con una RPC transaccional y totales calculados en Supabase
 - `supabase/sql/011_admin_first_login_setup.sql` para preparar administradoras y obligar cambio de clave temporal
+- `supabase/sql/012_catalog_units_other_request.sql` para actualizar el catalogo desde `Lista de frutas y verduras 01-08-2026.xlsx`, agregar unidad/kg y permitir el campo `Otro`
 
 Pasos:
 
 1. Completa `docs/static/config.js` con tu `SUPABASE_ANON_KEY`
 2. Ejecuta `supabase/sql/009_github_pages_auth.sql` en Supabase
-3. Ejecuta `supabase/sql/010_secure_order_creation.sql` en Supabase
-4. Crea en `Authentication > Users` los usuarios `isabelsoledadster@gmail.com` y `nataliamillanassler@gmail.com` con la clave temporal acordada
-5. Ejecuta `supabase/sql/011_admin_first_login_setup.sql` en Supabase
+3. Crea en `Authentication > Users` los usuarios `isabelsoledadster@gmail.com` y `nataliamillanassler@gmail.com` con la clave temporal acordada
+4. Ejecuta `supabase/sql/011_admin_first_login_setup.sql` en Supabase
+5. Ejecuta `supabase/sql/012_catalog_units_other_request.sql` en Supabase
 6. Publica GitHub Pages apuntando a la carpeta `docs/`
+
+En el SQL Editor debes abrir el archivo `.sql`, copiar todo su contenido y pegarlo en Supabase. No pegues solo la ruta como `supabase/sql/012_catalog_units_other_request.sql`, porque Supabase lo interpreta como SQL y devuelve error de sintaxis.
 
 ### Importante sobre el login
 
