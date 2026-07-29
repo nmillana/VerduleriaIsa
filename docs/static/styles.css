@@ -219,6 +219,11 @@ p {
     color: var(--muted);
 }
 
+.inline-error {
+    color: #8a4a11;
+    font-weight: 700;
+}
+
 .lead {
     max-width: 42rem;
     font-size: 1rem;

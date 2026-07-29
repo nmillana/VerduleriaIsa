@@ -835,7 +835,9 @@ async function handleSubmit(event) {
                 break;
         }
     } catch (error) {
-        state.flash = { tone: "error", message: friendlyError(error) };
+        const message = friendlyError(error);
+        setInlineStatus(form, message, "error");
+        state.flash = { tone: "error", message };
         await renderCurrentRoute();
     } finally {
         setFormBusy(form, false);
@@ -986,6 +988,7 @@ async function submitAdminLogin(form) {
         throw new Error("Ingresa correo y contraseña.");
     }
 
+    setInlineStatus(form, "Conectando con Supabase...", "notice");
     const { data, error } = await withSupabaseTimeout(
         state.client.auth.signInWithPassword({ email, password }),
         "Supabase no respondió al ingresar como administradora. Revisa la conexión e intenta nuevamente."
@@ -994,6 +997,7 @@ async function submitAdminLogin(form) {
         throw error;
     }
 
+    setInlineStatus(form, "Credenciales aceptadas. Verificando administradora...", "notice");
     state.session = data.session;
     await syncIdentity("SIGNED_IN");
     if (state.role !== "admin") {
@@ -1002,11 +1006,13 @@ async function submitAdminLogin(form) {
     }
 
     if (state.profile?.must_reset_password) {
+        setInlineStatus(form, "Administradora validada. Abriendo cambio de contraseña...", "notice");
         state.flash = { tone: "notice", message: "Define una nueva contraseña para activar el panel." };
         navigate("/admin/cambiar-clave", true);
         return;
     }
 
+    setInlineStatus(form, "Administradora validada. Abriendo panel...", "notice");
     state.flash = { tone: "notice", message: "Ingreso administrador correcto." };
     navigate("/admin/dashboard", true);
 }
@@ -1361,7 +1367,8 @@ function renderAdminLoginPage() {
                 <label>Contraseña
                     <input type="password" name="password" autocomplete="current-password" required>
                 </label>
-                <button class="button primary" type="submit">Ingresar</button>
+                <p class="field-note" data-admin-login-status>Proyecto Supabase: ${e(currentSupabaseProjectLabel())}</p>
+                <button class="button primary" type="submit" data-busy-text="Ingresando...">Ingresar</button>
             </form>
         </section>
     `;
@@ -2748,6 +2755,15 @@ function setFormBusy(form, busy) {
     for (const field of form.querySelectorAll("button, input, select, textarea")) {
         field.disabled = busy;
     }
+}
+
+function setInlineStatus(form, message, tone = "notice") {
+    const statusNode = form.querySelector("[data-admin-login-status]");
+    if (!statusNode) {
+        return;
+    }
+    statusNode.textContent = message;
+    statusNode.classList.toggle("inline-error", tone === "error");
 }
 
 function withSupabaseTimeout(promise, message, timeoutMs = SUPABASE_TIMEOUT_MS) {
