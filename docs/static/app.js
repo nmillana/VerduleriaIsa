@@ -27,6 +27,8 @@ const PRODUCT_FIELDS_WITH_IMAGE = `${PRODUCT_BASE_FIELDS},image_url`;
 const UNIT_CHOICES = [["kg", "Kg"], ["unidad", "Unidad"]];
 const PRODUCT_PHOTO_BASE = 'https://www.themealdb.com/images/ingredients';
 const PRODUCT_PHOTO_VARIANT = '-medium';
+const PRODUCT_IMAGE_BUCKET = 'product-images';
+const PRODUCT_STORAGE_IMAGE_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.webp'];
 const CATEGORY_PHOTO_TERMS = {
     frutas: 'Apples',
     verduras_hortalizas: 'Carrots',
@@ -1177,6 +1179,10 @@ async function handleClick(event) {
                 navigate("/cliente/carrito");
                 break;
             }
+            case "cancel-order-edit":
+                clearOrderDraft();
+                navigate(actionNode.dataset.target || "/cliente/dashboard");
+                break;
             case "focus-search":
                 document.querySelector(actionNode.dataset.target || "[data-product-search]")?.focus();
                 break;
@@ -1902,7 +1908,7 @@ function renderClientDashboardPage(client, dashboard, month) {
                         <input type="month" name="month" value="${e(month)}">
                         <button class="button ghost" type="submit">Ver mes</button>
                     </form>
-                    ${dashboard.latest_order ? `<a class="button ghost" href="#/cliente/pedido/nuevo?source=${dashboard.latest_order.id}">Repetir último pedido</a>` : ""}
+                    ${dashboard.latest_order ? `<a class="button ghost" href="#/cliente/carrito?source=${dashboard.latest_order.id}">Repetir último pedido</a>` : ""}
                 </div>
             </div>
 
@@ -1963,7 +1969,7 @@ function renderClientProfilePage(client) {
 }
 
 function renderClientOrderCard(order) {
-    const actionHref = `#/cliente/pedido/nuevo?${order.status === "pendiente" ? "edit" : "source"}=${order.id}`;
+    const actionHref = `#/cliente/carrito?${order.status === "pendiente" ? "edit" : "source"}=${order.id}`;
     const actionLabel = order.status === "pendiente" ? "Editar solicitud" : "Repetir pedido";
     return `
         <article class="order-card">
@@ -1983,11 +1989,57 @@ function renderClientOrderCard(order) {
 }
 
 function renderProductThumb(product, className = 'product-thumb') {
-    return `<img class='${e(className)}' src='${e(productImageSrc(product))}' alt='${e(productDisplayName(product))}' loading='lazy' referrerpolicy='no-referrer' data-fallback='${e(productFallbackImageSrc(product))}' onerror='this.onerror=null;this.src=this.dataset.fallback'>`;
+    const candidates = productImageCandidates(product);
+    const [src, ...fallbacks] = candidates;
+    return `<img class='${e(className)}' src='${e(src)}' alt='${e(productDisplayName(product))}' loading='lazy' referrerpolicy='no-referrer' data-fallbacks='${e(fallbacks.join('|'))}' onerror='swapProductImageFallback(this)'>`;
+}
+
+function swapProductImageFallback(image) {
+    const fallbacks = String(image.dataset.fallbacks || '').split('|').filter(Boolean);
+    const next = fallbacks.shift();
+    if (!next) {
+        image.onerror = null;
+        return;
+    }
+    image.dataset.fallbacks = fallbacks.join('|');
+    image.src = next;
 }
 
 function productImageSrc(product) {
-    return safeProductImageUrl(product.image_url) || productPhotoUrl(productPhotoTerms(product));
+    return productImageCandidates(product)[0];
+}
+
+function productImageCandidates(product) {
+    const candidates = [
+        safeProductImageUrl(product.image_url),
+        ...productStorageImageUrls(product),
+        productPhotoUrl(productPhotoTerms(product)),
+        productFallbackImageSrc(product),
+    ].filter(Boolean);
+    return [...new Set(candidates)];
+}
+
+function productStorageImageUrls(product) {
+    const baseUrl = productStorageBaseUrl();
+    if (!baseUrl) {
+        return [];
+    }
+
+    const rawNames = [
+        productDisplayName(product),
+        product.name,
+        [productDisplayName(product), product.presentation].filter(Boolean).join(' '),
+        productImageSlug(productDisplayName(product)),
+        productImageSlug(product.name),
+        productImageSlug([productDisplayName(product), product.presentation].filter(Boolean).join(' ')),
+    ].filter(Boolean);
+    const fileBases = [...new Set(rawNames)];
+    return fileBases.flatMap((fileBase) => PRODUCT_STORAGE_IMAGE_EXTENSIONS.map((extension) => `${baseUrl}/${encodeURIComponent(fileBase)}${extension}`));
+}
+
+function productStorageBaseUrl() {
+    const supabaseUrl = String(window.VERDULERIA_CONFIG?.SUPABASE_URL || '').replace(/\/+$/, '');
+    return supabaseUrl ? `${supabaseUrl}/storage/v1/object/public/${PRODUCT_IMAGE_BUCKET}` : '';
 }
 
 function safeProductImageUrl(value) {
@@ -2175,7 +2227,7 @@ function renderClientOrderFormPage(products, draft, sourceOrder, editOrder, late
     const sourceOrderId = sourceOrder?.id || draft.source_order_id || "";
     const editOrderId = editOrder?.id || draft.edit_order_id || "";
     const repeatLatestAction = latestOrder && !editOrder && !sourceOrder
-        ? `<a class="button ghost repeat-latest-button" href="#/cliente/pedido/nuevo?source=${latestOrder.id}">Repetir último pedido</a>`
+        ? `<a class="button ghost repeat-latest-button" href="#/cliente/carrito?source=${latestOrder.id}">Repetir último pedido</a>`
         : "";
     const groupedProducts = groupProducts(products);
     const activeCategories = CATEGORY_CHOICES.filter(([category]) => (groupedProducts.get(category) || []).length > 0);
@@ -2253,6 +2305,9 @@ function renderClientCartReviewPage(products, draft) {
         : draft.source_order_id
             ? `#/cliente/pedido/nuevo?source=${draft.source_order_id}`
             : "#/cliente/pedido/nuevo";
+    const cancelEditAction = draft.edit_order_id
+        ? `<button class="button ghost" type="button" data-action="cancel-order-edit" data-target="/cliente/pedido/${draft.edit_order_id}">Cancelar edición</button>`
+        : "";
     const rows = selectedItems.map(({ product, selection }) => `
         <div class="cart-review-item product-row is-selected" data-product-id="${product.id}" data-product-name="${e(productSearchText(product))}" data-product-category="${e(product.category)}">
             <div class="product-info">
@@ -2282,8 +2337,11 @@ function renderClientCartReviewPage(products, draft) {
             <input type="hidden" name="edit_order_id" value="${e(draft.edit_order_id || "")}">
 
             <section class="catalog-title-row cart-title-row">
-                <h1>Detalle de solicitud</h1>
-                <a class="button ghost" href="${continueHref}">Seguir agregando</a>
+                <h1>${draft.edit_order_id ? "Editar solicitud" : "Detalle de solicitud"}</h1>
+                <div class="hero-actions">
+                    <a class="button ghost" href="${continueHref}">Seguir agregando</a>
+                    ${cancelEditAction}
+                </div>
             </section>
 
             <section class="panel cart-review-panel">
