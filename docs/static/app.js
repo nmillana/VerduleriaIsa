@@ -962,7 +962,8 @@ async function upsertClientProfileForCurrentUser(values) {
 async function saveProduct(values) {
     const displayName = sanitizeText(values.display_name || values.name, 120);
     const presentation = sanitizeText(values.presentation, 80);
-    const rawImageUrl = sanitizeText(values.image_url, 1000);
+    const hasImageUrlField = Object.prototype.hasOwnProperty.call(values, "image_url");
+    const rawImageUrl = hasImageUrlField ? sanitizeText(values.image_url, 1000) : "";
     const imageUrl = safeProductImageUrl(rawImageUrl);
     if (rawImageUrl && !imageUrl) {
         throw new Error("La imagen debe ser una URL http(s) o una ruta ./static/...");
@@ -974,8 +975,10 @@ async function saveProduct(values) {
         category: CATEGORY_LABELS[values.category] ? values.category : "verduras_hortalizas",
         estimated_price: Math.max(0, Math.round(Number(values.estimated_price) || 0)),
         is_active: values.is_active === true,
-        image_url: imageUrl || null,
     };
+    if (hasImageUrlField) {
+        payload.image_url = imageUrl || null;
+    }
 
     if (!displayName) {
         throw new Error("El nombre visible del producto es obligatorio.");
@@ -984,7 +987,7 @@ async function saveProduct(values) {
     try {
         await saveProductMutation(values.id, payload, displayName);
     } catch (error) {
-        if (!isMissingProductImageColumn(error) || imageUrl) {
+        if (!isMissingProductImageColumn(error) || imageUrl || !hasImageUrlField) {
             throw error;
         }
         await saveProductMutation(values.id, withoutImageUrl(payload), displayName);
@@ -1241,6 +1244,9 @@ async function handleClick(event) {
                 break;
             case "export-consolidation":
                 await exportConsolidationXls(actionNode.dataset.month || currentMonthValue());
+                break;
+            case "export-products":
+                await exportProductsXls();
                 break;
             case "open-whatsapp":
                 await openWhatsAppForOrder(Number(actionNode.dataset.orderId));
@@ -1592,16 +1598,20 @@ async function submitProductsBulkSave(form) {
 
 function readProductFormValues(container) {
     const value = (name) => container.querySelector(`[name="${name}"]`)?.value || "";
-    return {
+    const values = {
         id: Number(value("product_id") || 0) || null,
         name: value("name"),
         display_name: value("display_name"),
         presentation: value("presentation"),
         category: value("category"),
         estimated_price: value("estimated_price"),
-        image_url: value("image_url"),
         is_active: value("is_active") === "1",
     };
+    const imageInput = container.querySelector('[name="image_url"]');
+    if (imageInput) {
+        values.image_url = imageInput.value || "";
+    }
+    return values;
 }
 
 async function switchRole(role) {
@@ -1708,6 +1718,56 @@ async function exportConsolidationXls(month) {
         </html>
     `;
     downloadFile(`consolidado_${month}.xls`, "application/vnd.ms-excel;charset=utf-8", `\ufeff${markup}`);
+}
+
+
+async function exportProductsXls() {
+    const products = await fetchProducts({ includeInactive: true });
+    const rows = products.map((product) => `
+        <tr>
+            <td>${product.id}</td>
+            <td>${e(product.name)}</td>
+            <td>${e(productDisplayName(product))}</td>
+            <td>${e(product.presentation || "")}</td>
+            <td>${e(CATEGORY_LABELS[product.category] || product.category)}</td>
+            <td>${product.estimated_price}</td>
+            <td>${product.is_active ? "Activo" : "Inactivo"}</td>
+            <td>${e(productImageSlug(productDisplayName(product)))}</td>
+        </tr>
+    `).join("");
+    const markup = `
+        <html>
+        <head>
+            <meta charset="utf-8">
+            <style>
+                body { font-family: Arial, sans-serif; color: #173127; }
+                h1 { color: #0b3d27; }
+                table { border-collapse: collapse; width: 100%; }
+                th { background: #1f6d2d; color: #fff; }
+                th, td { border: 1px solid #cfe0c4; padding: 8px; text-align: left; }
+            </style>
+        </head>
+        <body>
+            <h1>Productos Verdulería Isa</h1>
+            <table>
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Nombre interno</th>
+                        <th>Nombre visible</th>
+                        <th>Presentación</th>
+                        <th>Categoría</th>
+                        <th>Precio referencia</th>
+                        <th>Estado</th>
+                        <th>Nombre archivo imagen sugerido</th>
+                    </tr>
+                </thead>
+                <tbody>${rows || `<tr><td colspan="8">Sin productos.</td></tr>`}</tbody>
+            </table>
+        </body>
+        </html>
+    `;
+    downloadFile(`productos_verduleria_isa_${currentDateStamp()}.xls`, "application/vnd.ms-excel;charset=utf-8", `\ufeff${markup}`);
 }
 
 async function openWhatsAppForOrder(orderId) {
@@ -2791,6 +2851,9 @@ function renderAdminProductsPage(products) {
                 <h1>Productos y precios</h1>
                 <p class="muted">La edición en GitHub Pages ahora se guarda directo en Supabase con RLS.</p>
             </div>
+            <div class="hero-actions">
+                <button class="button ghost" type="button" data-action="export-products">Descargar productos XLS</button>
+            </div>
         </section>
 
         <section class="panel">
@@ -2811,9 +2874,6 @@ function renderAdminProductsPage(products) {
                 <label>Precio estimado
                     <input type="number" name="estimated_price" min="0" required>
                 </label>
-                <label>Imagen producto
-                    <input type="url" name="image_url" placeholder="https://...">
-                </label>
                 <label>Activo
                     <select name="is_active">
                         <option value="1">Sí</option>
@@ -2829,7 +2889,7 @@ function renderAdminProductsPage(products) {
                 <div class="section-head compact-section-head">
                     <div>
                         <h2>Editar productos actuales</h2>
-                        <p class="muted">Puedes cambiar precios, estado e imágenes y guardar todo al final.</p>
+                        <p class="muted">Puedes cambiar precios y estado; las imágenes se toman del bucket product-images por nombre de producto.</p>
                     </div>
                     <button class="button primary" type="submit" data-busy-text="Guardando...">Guardar todos los cambios</button>
                 </div>
@@ -2845,7 +2905,6 @@ function renderAdminProductsPage(products) {
                                 ${CATEGORY_CHOICES.map(([value, label]) => `<option value="${e(value)}" ${product.category === value ? "selected" : ""}>${e(label)}</option>`).join("")}
                             </select>
                             <input type="number" name="estimated_price" min="0" value="${product.estimated_price}" required>
-                            <input type="url" name="image_url" value="${e(product.image_url)}" placeholder="URL imagen">
                             <select name="is_active">
                                 <option value="1" ${product.is_active ? "selected" : ""}>Activo</option>
                                 <option value="0" ${product.is_active ? "" : "selected"}>Inactivo</option>
@@ -3765,6 +3824,11 @@ function monthRange(month) {
         start: start.toISOString(),
         end: end.toISOString(),
     };
+}
+
+function currentDateStamp() {
+    const now = new Date();
+    return `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}${String(now.getDate()).padStart(2, "0")}`;
 }
 
 function currentMonthValue() {

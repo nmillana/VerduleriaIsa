@@ -3389,11 +3389,7 @@ body {
 }
 
 .product-admin-row {
-    grid-template-columns: 56px minmax(150px, 1.25fr) minmax(110px, 0.8fr) minmax(150px, 1fr) 112px minmax(180px, 1.1fr) 108px auto;
-}
-
-.product-admin-row input[name="image_url"] {
-    min-width: 180px;
+    grid-template-columns: 56px minmax(150px, 1.25fr) minmax(110px, 0.8fr) minmax(150px, 1fr) 112px 108px auto;
 }
 
 @media (max-width: 720px) {
@@ -3596,11 +3592,7 @@ nav.mobile-bottom-nav.client-top-nav.has-admin {
 }
 
 .product-admin-row {
-    grid-template-columns: 56px minmax(150px, 1.25fr) minmax(110px, 0.8fr) minmax(150px, 1fr) 112px minmax(180px, 1.1fr) 108px;
-}
-
-.product-admin-row input[name="image_url"] {
-    min-width: 180px;
+    grid-template-columns: 56px minmax(150px, 1.25fr) minmax(110px, 0.8fr) minmax(150px, 1fr) 112px 108px;
 }
 
 nav.mobile-bottom-nav.client-top-nav {
@@ -3723,5 +3715,237 @@ nav.mobile-bottom-nav.client-top-nav.has-admin {
         width: 40px;
         height: 40px;
         min-height: 40px;
+    }
+}
+
+
+/* Mobile density, PWA logo and product admin cleanup 2026-07-30 */
+.auth-panel .access-card__logo-wrap,
+.form-panel.narrow .access-card__logo-wrap {
+    width: 100%;
+    height: auto;
+    justify-content: center;
+    text-align: center;
+}
+
+.auth-panel .access-card__logo,
+.form-panel.narrow .access-card__logo {
+    width: min(300px, 78vw);
+    max-width: 300px;
+    height: auto;
+    margin-inline: auto;
+}
+
+.product-admin-row {
+    grid-template-columns: 56px minmax(170px, 1.45fr) minmax(120px, 0.8fr) minmax(160px, 1fr) 124px 112px;
+}
+
+@media (max-width: 960px) {
+    .product-admin-row {
+        grid-template-columns: 56px minmax(180px, 1fr) minmax(120px, 0.65fr) minmax(160px, 0.85fr) 110px 106px;
+        overflow-x: auto;
+    }
+}
+
+@media (max-width: 720px) {
+    .page-shell.client-shell {
+        width: min(100% - 0.6rem, 520px);
+        padding-top: 0.25rem;
+    }
+
+    .content-shell {
+        gap: 0.68rem;
+    }
+
+    .section-head {
+        gap: 0.55rem;
+    }
+
+    .section-head h1,
+    .client-orders-page h1 {
+        font-size: 1.62rem;
+        line-height: 1.06;
+    }
+
+    .eyebrow {
+        font-size: 0.66rem;
+        letter-spacing: 0.12em;
+    }
+
+    .muted,
+    .field-note,
+    .stat-label {
+        font-size: 0.84rem;
+        line-height: 1.35;
+    }
+
+    .panel,
+    .form-panel,
+    .access-card,
+    .loading-card,
+    .empty-state {
+        padding: 0.78rem;
+    }
+
+    .grid,
+    .three-up,
+    .two-up,
+    .split-grid,
+    .client-summary-grid {
+        gap: 0.58rem;
+    }
+
+    .grid.three-up,
+    .grid.two-up,
+    .client-summary-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .stat-card {
+        display: grid;
+        grid-template-columns: minmax(92px, auto) minmax(0, 1fr);
+        align-items: center;
+        gap: 0.58rem;
+        min-height: 72px;
+        padding: 0.72rem 0.82rem;
+    }
+
+    .stat-value {
+        font-size: 1.36rem;
+        line-height: 1;
+    }
+
+    .stat-label {
+        margin-top: 0;
+    }
+
+    .button,
+    button,
+    input:not([type="checkbox"]),
+    select,
+    textarea {
+        min-height: 40px;
+    }
+
+    .button {
+        padding: 0.6rem 0.82rem;
+        font-size: 0.86rem;
+    }
+
+    input,
+    textarea,
+    select {
+        padding: 0.66rem 0.74rem;
+        font-size: 0.92rem;
+    }
+
+    .hero-actions {
+        gap: 0.48rem;
+    }
+
+    .order-card,
+    .week-card {
+        padding: 0.72rem;
+    }
+
+    .client-history-panel .order-card {
+        gap: 0.52rem;
+    }
+
+    .auth-panel {
+        width: min(100%, 460px);
+        padding: 0.95rem;
+    }
+
+    .auth-panel .access-card__logo-wrap,
+    .form-panel.narrow .access-card__logo-wrap {
+        width: 100%;
+        height: auto;
+    }
+
+    .auth-panel .access-card__logo,
+    .form-panel.narrow .access-card__logo {
+        width: min(240px, 68vw);
+        max-width: 240px;
+        height: auto;
+    }
+
+    .auth-panel h1 {
+        font-size: 1.82rem;
+        line-height: 1.05;
+    }
+
+    .catalog-app .product-table {
+        gap: 0.55rem;
+    }
+
+    .catalog-app .product-row,
+    .product-row.mobile-product-card {
+        min-height: 166px;
+        padding: 0.58rem;
+        gap: 0.45rem;
+    }
+
+    .catalog-app .product-info,
+    .mobile-product-card .product-info {
+        grid-template-columns: 1fr;
+        gap: 0.38rem;
+    }
+
+    .catalog-app .product-thumb,
+    .mobile-product-card .product-thumb {
+        width: 100%;
+        height: 74px;
+        object-fit: contain;
+    }
+
+    .catalog-app .product-row strong,
+    .mobile-product-card strong {
+        font-size: 0.76rem;
+        line-height: 1.18;
+    }
+
+    .product-presentation,
+    .product-price {
+        font-size: 0.72rem;
+    }
+
+    .product-controls.compact-product-controls,
+    .product-controls {
+        grid-template-columns: minmax(0, 1fr) 72px;
+        gap: 0.35rem;
+    }
+
+    .product-add-button,
+    .quantity-selector,
+    .product-controls select {
+        min-height: 34px;
+        font-size: 0.72rem;
+    }
+}
+
+@media (max-width: 380px) {
+    .section-head h1,
+    .client-orders-page h1 {
+        font-size: 1.48rem;
+    }
+
+    .stat-card {
+        min-height: 64px;
+        padding: 0.62rem 0.72rem;
+    }
+
+    .stat-value {
+        font-size: 1.22rem;
+    }
+
+    .catalog-app .product-row,
+    .product-row.mobile-product-card {
+        min-height: 156px;
+    }
+
+    .catalog-app .product-thumb,
+    .mobile-product-card .product-thumb {
+        height: 66px;
     }
 }
