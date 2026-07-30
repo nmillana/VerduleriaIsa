@@ -1661,7 +1661,8 @@ async function printCurrentOrder(orderId, isAdmin) {
     if (!order) {
         throw new Error("No encontré el pedido para imprimir.");
     }
-    openPrintWindow(buildOrderPrintMarkup(order, isAdmin), `Pedido #${order.id} | ${APP_NAME}`);
+    const pdfBlob = await buildOrderPdfBlob(order, isAdmin);
+    openPdfBlob(pdfBlob, orderPdfFilename(order));
 }
 
 async function printMonthlySummary(month) {
@@ -1782,18 +1783,39 @@ async function openWhatsAppForOrder(orderId) {
         throw new Error("La clienta no tiene un número válido para WhatsApp.");
     }
 
-    openPrintWindow(buildOrderPrintMarkup(order, true), `Pedido #${order.id} | ${APP_NAME}`);
+    const pdfBlob = await buildOrderPdfBlob(order, true);
+    const filename = orderPdfFilename(order);
+    const text = orderWhatsappMessage(order);
+    const pdfFile = typeof File === "function"
+        ? new File([pdfBlob], filename, { type: "application/pdf" })
+        : null;
 
-    const lines = [
-        `Hola ${order.client_name || ""},`,
-        `te comparto la boleta PDF del pedido #${order.id} de Verdulería Isa.`,
-        `Total final o proyectado: ${formatCurrency(order.display_total)}.`,
-        "",
-        "Adjunto la boleta en PDF con el detalle del pedido.",
-    ];
+    if (pdfFile && canSharePdfFile(pdfFile)) {
+        try {
+            await navigator.share({
+                title: `Pedido #${order.id} | ${APP_NAME}`,
+                text,
+                files: [pdfFile],
+            });
+            return;
+        } catch (error) {
+            if (error?.name === "AbortError") {
+                return;
+            }
+            console.warn("No pude compartir el PDF directamente.", error);
+        }
+    }
 
-    const text = encodeURIComponent(lines.join("\n").trim());
-    window.setTimeout(() => window.open(`https://wa.me/${phone}?text=${text}`, "_blank", "noopener"), 350);
+    const fallbackText = `${text}
+
+Nota: este navegador no permite adjuntar el PDF automáticamente. Para enviarlo sin guardar, abre esta app desde el celular y comparte con WhatsApp instalado.`;
+    const url = `https://wa.me/${phone}?text=${encodeURIComponent(fallbackText)}`;
+    window.open(url, "_blank", "noopener") || (window.location.href = url);
+    state.flash = {
+        tone: "notice",
+        message: "WhatsApp no permite adjuntar PDFs automáticamente en este navegador. En el celular, usa Compartir y elige WhatsApp para enviar la boleta PDF sin guardarla.",
+    };
+    await renderCurrentRoute();
 }
 
 function renderShell(title, content) {
@@ -2738,7 +2760,7 @@ function renderAdminOrderDetailPage(order) {
                 <p class="muted">${e(order.client_name)} | ${e(order.client_email)} | ${e(order.client_phone)}</p>
             </div>
             <div class="hero-actions">
-                <button class="button ghost" type="button" data-action="open-whatsapp" data-order-id="${order.id}">Enviar por WhatsApp</button>
+                <button class="button ghost" type="button" data-action="open-whatsapp" data-order-id="${order.id}">Enviar PDF por WhatsApp</button>
                 <button class="button ghost" type="button" data-action="print-order" data-order-id="${order.id}">Imprimir / PDF</button>
                 <a class="button ghost" href="#/admin/pedidos">Volver</a>
             </div>
@@ -3458,6 +3480,295 @@ function normalizeQuantity(value) {
         return 0;
     }
     return Math.round(quantity * 100) / 100;
+}
+
+
+let receiptLogoDataUrl = "";
+
+async function buildOrderPdfBlob(order, includeClient) {
+    const PdfConstructor = pdfConstructor();
+    const doc = new PdfConstructor({ orientation: "portrait", unit: "mm", format: "a4", compress: true });
+    doc.setProperties({
+        title: `Pedido #${order.id} | ${APP_NAME}`,
+        subject: "Boleta de pedido",
+        author: APP_NAME,
+    });
+
+    const page = { width: 210, height: 297 };
+    const margin = 8;
+    const green = [24, 86, 55];
+    const softGreen = [238, 248, 231];
+    const leafGreen = [112, 168, 58];
+    const orange = [242, 112, 16];
+    const border = [184, 216, 153];
+
+    doc.setFillColor(255, 255, 255);
+    doc.rect(0, 0, page.width, page.height, "F");
+    doc.setFillColor(248, 252, 243);
+    doc.circle(196, 278, 38, "F");
+
+    try {
+        const logo = await getReceiptLogoDataUrl();
+        doc.addImage(logo, "PNG", margin, 6, 58, 58, undefined, "FAST");
+    } catch (error) {
+        console.warn("No pude cargar el logo para el PDF.", error);
+        setPdfFont(doc, 16, "bold", green);
+        doc.text(APP_NAME, margin, 22);
+    }
+
+    setPdfFont(doc, 25, "bold", green);
+    doc.text(`Pedido #${order.id}`, 126, 23);
+    doc.setDrawColor(...orange);
+    doc.setLineWidth(1.1);
+    doc.line(150, 31, 162, 31);
+
+    if (includeClient) {
+        const clientLine = [order.client_name, order.client_email, order.client_phone].filter(Boolean).join(" | ");
+        setPdfFont(doc, 8.5, "normal", [40, 52, 47]);
+        doc.text(fitPdfText(doc, clientLine || "Clienta sin datos", 72), 126, 42);
+    }
+    setPdfFont(doc, 7.5, "normal", [98, 118, 106]);
+    doc.text(`${formatDateTime(order.created_at)} | Estado: ${statusLabel(order.status)}`, 126, 50);
+
+    drawDeliveryBlock(doc, margin, 68, page.width - margin * 2, 22, order, green, leafGreen, border);
+    drawSummaryBlock(doc, margin, 98, page.width - margin * 2, 43, order, green, orange, leafGreen, border);
+
+    let productsY = 150;
+    const notes = [
+        order.client_note ? ["Observaciones", order.client_note] : null,
+        order.other_request ? ["Otro", order.other_request] : null,
+    ].filter(Boolean);
+    if (notes.length) {
+        drawNotesBlock(doc, margin, productsY, page.width - margin * 2, 22, notes, green, border);
+        productsY += 28;
+    }
+
+    drawProductsTable(doc, margin, productsY, page.width - margin * 2, 268 - productsY, order.items || [], green, leafGreen, border);
+    drawReceiptFooter(doc, margin, 273, page.width - margin * 2, green, orange, leafGreen);
+
+    return doc.output("blob");
+}
+
+function pdfConstructor() {
+    const constructor = window.jspdf?.jsPDF || window.jsPDF;
+    if (!constructor) {
+        throw new Error("No se pudo cargar el generador de PDF. Revisa la conexión e intenta nuevamente.");
+    }
+    return constructor;
+}
+
+async function getReceiptLogoDataUrl() {
+    if (receiptLogoDataUrl) {
+        return receiptLogoDataUrl;
+    }
+    const response = await fetch(assetUrl("./static/logo-verduleria-isa.png"));
+    if (!response.ok) {
+        throw new Error("No pude cargar el logo del PDF.");
+    }
+    receiptLogoDataUrl = await blobToDataUrl(await response.blob());
+    return receiptLogoDataUrl;
+}
+
+function blobToDataUrl(blob) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result || ""));
+        reader.onerror = () => reject(reader.error || new Error("No pude leer la imagen."));
+        reader.readAsDataURL(blob);
+    });
+}
+
+function drawDeliveryBlock(doc, x, y, width, height, order, green, leafGreen, border) {
+    drawRoundedPanel(doc, x, y, width, height, 4, border, [255, 255, 255]);
+    doc.setFillColor(...leafGreen);
+    doc.circle(x + 13, y + height / 2, 7, "F");
+    setPdfFont(doc, 12, "bold", green);
+    doc.text("Datos de entrega", x + 25, y + 9);
+    setPdfFont(doc, 11, "normal", [31, 47, 41]);
+    doc.text(fitPdfText(doc, order.client_address || "Dirección no informada", width - 34), x + 25, y + 17);
+}
+
+function drawSummaryBlock(doc, x, y, width, height, order, green, orange, leafGreen, border) {
+    drawRoundedPanel(doc, x, y, width, height, 4, border, [255, 255, 255]);
+    setPdfFont(doc, 15, "bold", green);
+    doc.text(`Pedido #${order.id}`, x + width / 2, y + 10, { align: "center" });
+    const gap = 6;
+    const cardWidth = (width - gap * 2 - 8) / 3;
+    const cardY = y + 15;
+    const cards = [
+        ["Subtotal estimado", "de productos", formatCurrency(order.subtotal_estimated), green],
+        ["Despacho fijo", "", formatCurrency(order.delivery_fee), orange],
+        ["Total final", "o proyectado", formatCurrency(order.display_total), green],
+    ];
+    cards.forEach((card, index) => {
+        const cardX = x + 4 + index * (cardWidth + gap);
+        drawRoundedPanel(doc, cardX, cardY, cardWidth, 22, 3.5, border, [255, 254, 251]);
+        setPdfFont(doc, 13, "bold", card[3]);
+        doc.text(card[2], cardX + 6, cardY + 8);
+        setPdfFont(doc, 8, "normal", [31, 47, 41]);
+        doc.text(card[0], cardX + 6, cardY + 15);
+        if (card[1]) {
+            doc.text(card[1], cardX + 6, cardY + 19);
+        }
+    });
+}
+
+function drawNotesBlock(doc, x, y, width, height, notes, green, border) {
+    drawRoundedPanel(doc, x, y, width, height, 4, border, [255, 255, 255]);
+    const columnWidth = notes.length > 1 ? (width - 8) / 2 : width - 8;
+    notes.forEach(([title, text], index) => {
+        const noteX = x + 5 + index * (columnWidth + 4);
+        setPdfFont(doc, 9, "bold", green);
+        doc.text(title, noteX, y + 8);
+        setPdfFont(doc, 7.6, "normal", [61, 82, 70]);
+        const clipped = fitPdfText(doc, text, columnWidth - 2);
+        doc.text(clipped, noteX, y + 16);
+    });
+}
+
+function drawProductsTable(doc, x, y, width, height, items, green, leafGreen, border) {
+    drawRoundedPanel(doc, x, y, width, height, 4, border, [255, 255, 255]);
+    setPdfFont(doc, 12, "bold", green);
+    doc.text("Productos", x + 7, y + 9);
+
+    const tableX = x + 4;
+    const tableY = y + 14;
+    const tableW = width - 8;
+    const headerH = 7;
+    const rows = items.length ? items : [];
+    const rowH = rows.length ? Math.max(3.15, Math.min(6, (height - 22 - headerH) / rows.length)) : 8;
+    const bodyFont = Math.max(5.1, Math.min(8, rowH * 1.35));
+    const columns = [
+        ["Producto", 52],
+        ["Cantidad", 24],
+        ["Subtotal estimado", 33],
+        ["Subtotal real", 30],
+        ["Nota", tableW - 139],
+    ];
+
+    doc.setFillColor(42, 111, 40);
+    doc.roundedRect(tableX, tableY, tableW, headerH, 2.5, 2.5, "F");
+    setPdfFont(doc, 7.3, "bold", [255, 255, 255]);
+    let currentX = tableX;
+    columns.forEach(([label, colW], index) => {
+        doc.text(label, currentX + 2.2, tableY + 4.7);
+        if (index > 0) {
+            doc.setDrawColor(199, 225, 185);
+            doc.line(currentX, tableY, currentX, tableY + headerH);
+        }
+        currentX += colW;
+    });
+
+    if (!rows.length) {
+        setPdfFont(doc, 8, "normal", [31, 47, 41]);
+        doc.text("Sin productos.", tableX + 3, tableY + headerH + 7);
+        return;
+    }
+
+    let rowY = tableY + headerH;
+    rows.forEach((item, index) => {
+        doc.setFillColor(index % 2 ? 252 : 255, index % 2 ? 254 : 255, index % 2 ? 249 : 255);
+        doc.rect(tableX, rowY, tableW, rowH, "F");
+        doc.setDrawColor(221, 235, 205);
+        doc.line(tableX, rowY, tableX + tableW, rowY);
+        setPdfFont(doc, bodyFont, "normal", [31, 47, 41]);
+        const actualTotal = item.was_missing
+            ? "Faltó"
+            : item.actual_total === null || item.actual_total === undefined
+                ? "-"
+                : formatCurrency(item.actual_total);
+        const note = [item.was_missing ? "No disponible" : "", item.item_note || ""].filter(Boolean).join(" - ") || "-";
+        const values = [
+            item.product_name,
+            formatOrderItemQuantity(item),
+            formatCurrency(item.estimated_total),
+            actualTotal,
+            note,
+        ];
+        let textX = tableX;
+        columns.forEach(([, colW], colIndex) => {
+            if (colIndex > 0) {
+                doc.setDrawColor(221, 235, 205);
+                doc.line(textX, rowY, textX, rowY + rowH);
+            }
+            const maxWidth = colW - 4;
+            const align = colIndex === 0 || colIndex === 4 ? "left" : "center";
+            const drawX = align === "center" ? textX + colW / 2 : textX + 2.3;
+            doc.text(fitPdfText(doc, values[colIndex], maxWidth), drawX, rowY + Math.min(rowH - 1, rowH * 0.68 + 1.1), { align });
+            textX += colW;
+        });
+        rowY += rowH;
+    });
+}
+
+function drawReceiptFooter(doc, x, y, width, green, orange, leafGreen) {
+    doc.setFillColor(255, 250, 241);
+    doc.roundedRect(x, y, width * 0.68, 15, 4, 4, "F");
+    setPdfFont(doc, 9, "normal", [31, 47, 41]);
+    doc.text("Gracias por confiar en Verdulería Isa.", x + 18, y + 6);
+    setPdfFont(doc, 10, "bold", green);
+    doc.text("¡Llevamos frescura a tu mesa!", x + 18, y + 11);
+    doc.setFillColor(...leafGreen);
+    doc.ellipse(x + width - 19, y + 9, 12, 6, "F");
+    doc.setFillColor(...orange);
+    doc.circle(x + width - 5, y + 5, 1.2, "F");
+}
+
+function drawRoundedPanel(doc, x, y, width, height, radius, strokeColor, fillColor) {
+    doc.setFillColor(...fillColor);
+    doc.setDrawColor(...strokeColor);
+    doc.setLineWidth(0.35);
+    doc.roundedRect(x, y, width, height, radius, radius, "FD");
+}
+
+function setPdfFont(doc, size, style = "normal", color = [24, 86, 55]) {
+    doc.setFont("helvetica", style);
+    doc.setFontSize(size);
+    doc.setTextColor(...color);
+}
+
+function fitPdfText(doc, value, maxWidth) {
+    const ellipsis = "...";
+    let text = String(value || "-").replace(/\s+/g, " ").trim();
+    if (doc.getTextWidth(text) <= maxWidth) {
+        return text;
+    }
+    while (text.length > 1 && doc.getTextWidth(`${text}${ellipsis}`) > maxWidth) {
+        text = text.slice(0, -1);
+    }
+    return `${text.trim()}${ellipsis}`;
+}
+
+function orderPdfFilename(order) {
+    return `Pedido_${order.id}_Verduleria_Isa.pdf`;
+}
+
+function orderWhatsappMessage(order) {
+    return [
+        `Hola ${order.client_name || ""},`,
+        `te comparto la boleta PDF del pedido #${order.id} de Verdulería Isa.`,
+        `Total final o proyectado: ${formatCurrency(order.display_total)}.`,
+        "",
+        "Adjunto la boleta en PDF con el detalle del pedido.",
+    ].join("\n").trim();
+}
+
+function canSharePdfFile(file) {
+    try {
+        return Boolean(navigator.share && navigator.canShare && navigator.canShare({ files: [file] }));
+    } catch (error) {
+        return false;
+    }
+}
+
+function openPdfBlob(blob, filename) {
+    const url = URL.createObjectURL(blob);
+    const popup = window.open(url, "_blank", "noopener");
+    if (!popup) {
+        downloadBlob(filename, blob);
+        return;
+    }
+    window.setTimeout(() => URL.revokeObjectURL(url), 120000);
 }
 
 function buildOrderPrintMarkup(order, includeClient) {
@@ -4237,7 +4548,10 @@ function friendlyError(error) {
 }
 
 function downloadFile(filename, mimeType, contents) {
-    const blob = new Blob([contents], { type: mimeType });
+    downloadBlob(filename, new Blob([contents], { type: mimeType }));
+}
+
+function downloadBlob(filename, blob) {
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement("a");
     anchor.href = url;
