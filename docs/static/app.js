@@ -1599,7 +1599,7 @@ function clientBottomNavActive() {
     if (path.includes("pedido/nuevo")) {
         return "categorias";
     }
-    if (path.includes("pedido/")) {
+    if (path === "/cliente/dashboard" || path.includes("pedido/")) {
         return "pedidos";
     }
     return "inicio";
@@ -1612,41 +1612,23 @@ function renderFlash(flash) {
 
 function renderHomePage() {
     return `
-        <section class="landing-page">
-            <section class="landing-hero">
+        <section class="landing-page app-start-page">
+            <section class="landing-hero app-start-screen">
+                <div class="landing-mobile-top">
+                    <span></span>
+                    <a class="landing-menu-button" href="#/login-cliente" aria-label="Ingresar"></a>
+                </div>
+                <img class="landing-logo" src="./static/logo-verduleria-isa.png" alt="${e(APP_NAME)}">
+                <p class="eyebrow">Tu feria personal</p>
+                <h1>Frescura directo a tu casa.</h1>
+                <p class="lead">Ingresa para armar tu pedido semanal de frutas, verduras y productos seleccionados.</p>
                 <figure class="landing-hero__image" aria-hidden="true">
                     <img src="${e(PROMO_IMAGE_URL)}" alt="Canasta con verduras frescas">
                 </figure>
-                <article class="landing-hero__card">
-                    <img class="landing-logo" src="./static/logo-verduleria-isa.png" alt="${e(APP_NAME)}">
-                    <p class="eyebrow">Tu feria personal</p>
-                    <h1>Frescura directo a tu casa.</h1>
-                    <p class="lead">Ingresa para armar tu pedido semanal de frutas, verduras y productos seleccionados.</p>
-                    <div class="landing-actions">
-                        <a class="button primary" href="#/login-cliente">Ingresar</a>
-                        <button class="button ghost" type="button" data-action="focus-category" data-target="landing-catalog">Ver catálogo</button>
-                    </div>
-                    <p class="landing-proof">Productos frescos y seleccionados cada semana</p>
-                </article>
-            </section>
-
-            <section class="landing-band" id="landing-how">
-                <h2>¿Cómo funciona?</h2>
-                <p>Entras, eliges tus productos por unidad o kg y envías tu pedido semanal para revisión.</p>
-            </section>
-
-            <section class="landing-band" id="landing-catalog">
-                <h2>Catálogo seleccionado</h2>
-                <div class="landing-preview-grid">
-                    <article><span>Frutas</span><strong>Manzanas, plátanos, naranjas</strong></article>
-                    <article><span>Verduras</span><strong>Tomates, zanahorias, brócoli</strong></article>
-                    <article><span>Listos</span><strong>Bolsa de cazuela, chapsui</strong></article>
+                <div class="landing-actions">
+                    <a class="button primary" href="#/login-cliente">Ingresar</a>
                 </div>
-            </section>
-
-            <section class="landing-band" id="landing-about">
-                <h2>Verduleria Isa</h2>
-                <p>Tu feria personal para pedir productos frescos de forma simple desde el celular.</p>
+                <p class="landing-proof">Productos frescos y seleccionados cada semana</p>
             </section>
         </section>
     `;
@@ -2037,24 +2019,13 @@ function productImageSlug(value) {
 function renderClientAppHeader(title = "Catálogo") {
     return `
         <header class="client-app-header">
-            <a class="app-back-button" href="#/cliente/dashboard" aria-label="Volver al panel"></a>
+            <button class="app-back-button" type="button" data-action="logout" aria-label="Salir de la app"></button>
             <img class="client-app-logo" src="./static/logo-verduleria-isa.png" alt="${e(APP_NAME)}">
             <button class="app-cart-button" type="button" data-action="focus-category" data-target="client-order-notes" aria-label="Ver carrito">
                 <span class="app-cart-icon" aria-hidden="true"></span>
                 <span data-selected-count>0</span>
             </button>
         </header>
-    `;
-}
-
-function renderCatalogSupportChips() {
-    return `
-        <div class="catalog-support-chips" aria-label="Filtros rápidos">
-            <button type="button">Temporada</button>
-            <button type="button">A granel</button>
-            <button type="button">Listos para cocinar</button>
-            <button type="button">Oferta</button>
-        </div>
     `;
 }
 
@@ -2154,7 +2125,7 @@ function renderClientBottomNav(active = "inicio") {
     };
     return `
         <nav class="mobile-bottom-nav" aria-label="Navegación clienta">
-            ${item("inicio", "#/cliente/dashboard", "Inicio", "nav-icon-home")}
+            ${item("inicio", "#/cliente/pedido/nuevo", "Inicio", "nav-icon-home")}
             ${item("categorias", "#/cliente/pedido/nuevo", "Categorías", "nav-icon-grid")}
             ${item("pedidos", "#/cliente/dashboard", "Pedidos", "nav-icon-bag")}
             ${item("favoritos", "#", "Favoritos", "nav-icon-heart", true)}
@@ -2168,7 +2139,8 @@ function renderClientOrderFormPage(products, draft, sourceOrder) {
     const clientNote = draft.client_note || "";
     const otherRequest = draft.other_request || "";
     const groupedProducts = groupProducts(products);
-    const groupsMarkup = CATEGORY_CHOICES
+    const activeCategories = CATEGORY_CHOICES.filter(([category]) => (groupedProducts.get(category) || []).length > 0);
+    const groupsMarkup = activeCategories
         .map(([category, label]) => {
             const items = groupedProducts.get(category) || [];
             if (!items.length) {
@@ -2199,15 +2171,12 @@ function renderClientOrderFormPage(products, draft, sourceOrder) {
                 <div class="shop-searchbar catalog-search">
                     <input type="search" data-product-search placeholder="Buscar frutas, verduras y más..." aria-label="Buscar producto">
                 </div>
-                <button class="catalog-filter-button" type="button">Filtros</button>
-                <button class="catalog-sort-button" type="button">Más pedidos</button>
+                <a class="catalog-sort-button" href="#/cliente/dashboard">Más pedidos</a>
             </section>
 
             <nav class="category-tabs catalog-category-tabs" aria-label="Categorías del catálogo">
-                ${CATEGORY_CHOICES.map(([value, label]) => `<button class="category-chip" type="button" data-action="focus-category" data-target="cat-${e(productImageSlug(value))}" data-category-nav="${e(value)}">${e(label)}</button>`).join("")}
+                ${activeCategories.map(([value, label]) => `<button class="category-chip" type="button" data-action="focus-category" data-target="cat-${e(productImageSlug(value))}" data-category-nav="${e(value)}">${e(label)}</button>`).join("")}
             </nav>
-
-            ${renderCatalogSupportChips()}
 
             <section class="catalog-week-banner">
                 <span aria-hidden="true"></span>
