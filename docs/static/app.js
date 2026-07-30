@@ -357,9 +357,13 @@ async function resolveRoute(route) {
             return redirect;
         }
         const products = await fetchProducts();
+        const draftResult = await resolveOrderDraftFromRoute(route);
+        if (draftResult.view) {
+            return draftResult.view;
+        }
         return {
-            title: "Carrito",
-            content: renderClientCartReviewPage(products, readOrderDraft()),
+            title: draftResult.editOrder ? "Editar pedido" : "Carrito",
+            content: renderClientCartReviewPage(products, draftResult.draft),
         };
     }
 
@@ -384,13 +388,7 @@ async function resolveRoute(route) {
             : null;
         const baseOrder = editOrder || sourceOrder;
         const draft = baseOrder
-            ? {
-                selections: buildRepeatSelections(baseOrder),
-                client_note: baseOrder.client_note || "",
-                other_request: baseOrder.other_request || "",
-                source_order_id: sourceOrder?.id || null,
-                edit_order_id: editOrder?.id || null,
-            }
+            ? buildOrderDraftFromOrder(baseOrder, Boolean(editOrder))
             : readOrderDraft();
         return {
             title: editOrder ? "Editar pedido" : "Nuevo pedido",
@@ -2250,6 +2248,11 @@ function renderClientCartReviewPage(products, draft) {
             return product && quantity > 0 ? { product, selection: { ...selection, quantity } } : null;
         })
         .filter(Boolean);
+    const continueHref = draft.edit_order_id
+        ? `#/cliente/pedido/nuevo?edit=${draft.edit_order_id}`
+        : draft.source_order_id
+            ? `#/cliente/pedido/nuevo?source=${draft.source_order_id}`
+            : "#/cliente/pedido/nuevo";
     const rows = selectedItems.map(({ product, selection }) => `
         <div class="cart-review-item product-row is-selected" data-product-id="${product.id}" data-product-name="${e(productSearchText(product))}" data-product-category="${e(product.category)}">
             <div class="product-info">
@@ -2280,7 +2283,7 @@ function renderClientCartReviewPage(products, draft) {
 
             <section class="catalog-title-row cart-title-row">
                 <h1>Detalle de solicitud</h1>
-                <a class="button ghost" href="#/cliente/pedido/nuevo">Seguir agregando</a>
+                <a class="button ghost" href="${continueHref}">Seguir agregando</a>
             </section>
 
             <section class="panel cart-review-panel">
@@ -2319,7 +2322,7 @@ function renderClientOrderDetailPage(order) {
                 <p class="muted">${e(formatDateTime(order.created_at))} | Estado: ${e(statusLabel(order.status))}</p>
             </div>
             <div class="hero-actions">
-                <a class="button ghost" href="#/cliente/pedido/nuevo?${order.status === "pendiente" ? "edit" : "source"}=${order.id}">${order.status === "pendiente" ? "Editar solicitud" : "Repetir pedido"}</a>
+                <a class="button ghost" href="#/cliente/carrito?${order.status === "pendiente" ? "edit" : "source"}=${order.id}">${order.status === "pendiente" ? "Editar solicitud" : "Repetir pedido"}</a>
                 <a class="button ghost" href="#/cliente/dashboard">Volver a pedidos</a>
             </div>
         </section>
@@ -2571,6 +2574,30 @@ function renderAdminOrderDetailPage(order) {
             <button class="button primary" type="submit">Guardar ajuste real</button>
         </form>
     `;
+}
+
+function renderReadOnlyOrderItemRows(items = []) {
+    if (!items.length) {
+        return `<tr><td colspan="5">Sin productos.</td></tr>`;
+    }
+
+    return items.map((item) => {
+        const actualTotal = item.was_missing
+            ? "Faltó"
+            : item.actual_total === null || item.actual_total === undefined
+                ? "-"
+                : formatCurrency(item.actual_total);
+        const note = [item.was_missing ? "No disponible" : "", item.item_note || ""].filter(Boolean).join(" · ") || "-";
+        return `
+            <tr>
+                <td>${e(item.product_name)}</td>
+                <td>${e(formatOrderItemQuantity(item))}</td>
+                <td>${formatCurrency(item.estimated_total)}</td>
+                <td>${e(actualTotal)}</td>
+                <td>${e(note)}</td>
+            </tr>
+        `;
+    }).join("");
 }
 
 function renderAdminOrderItemEditRows(items = []) {
@@ -3041,6 +3068,43 @@ function buildRepeatSelections(order) {
     return values;
 }
 
+async function resolveOrderDraftFromRoute(route) {
+    const editId = Number(route.query.get("edit") || 0);
+    const sourceId = Number(route.query.get("source") || 0);
+
+    if (!editId && !sourceId) {
+        return { draft: readOrderDraft(), editOrder: null, sourceOrder: null, view: null };
+    }
+
+    const orderId = editId || sourceId;
+    const order = await fetchOrderById(orderId, { clientId: state.profile.id });
+    if (!order) {
+        return { draft: readOrderDraft(), editOrder: null, sourceOrder: null, view: { title: "No encontrado", content: renderNotFound("No encontré ese pedido.") } };
+    }
+    if (editId && order.status !== "pendiente") {
+        return { draft: readOrderDraft(), editOrder: null, sourceOrder: null, view: redirectView(`/cliente/pedido/${order.id}`, "Solo puedes editar pedidos pendientes.", "error") };
+    }
+
+    const draft = buildOrderDraftFromOrder(order, Boolean(editId));
+    writeOrderDraft(draft);
+    return {
+        draft,
+        editOrder: editId ? order : null,
+        sourceOrder: sourceId ? order : null,
+        view: null,
+    };
+}
+
+function buildOrderDraftFromOrder(order, isEdit) {
+    return {
+        selections: buildRepeatSelections(order),
+        client_note: order.client_note || "",
+        other_request: order.other_request || "",
+        source_order_id: isEdit ? null : order.id,
+        edit_order_id: isEdit ? order.id : null,
+    };
+}
+
 function readOrderDraft() {
     const emptyDraft = { selections: {}, client_note: "", other_request: "", source_order_id: null, edit_order_id: null };
     try {
@@ -3054,6 +3118,20 @@ function readOrderDraft() {
     }
 }
 
+function writeOrderDraft(draft) {
+    try {
+        const normalized = normalizeOrderDraft(draft);
+        const hasContent = Object.keys(normalized.selections).length || normalized.client_note || normalized.other_request || normalized.source_order_id || normalized.edit_order_id;
+        if (!hasContent) {
+            window.localStorage?.removeItem(cartStorageKey());
+            return;
+        }
+        window.localStorage?.setItem(cartStorageKey(), JSON.stringify(normalized));
+    } catch (error) {
+        // localStorage can be unavailable in strict privacy modes.
+    }
+}
+
 function persistOrderDraft(form) {
     try {
         const formData = new FormData(form);
@@ -3064,11 +3142,7 @@ function persistOrderDraft(form) {
             source_order_id: Number(formData.get("source_order_id") || 0) || null,
             edit_order_id: Number(formData.get("edit_order_id") || 0) || null,
         };
-        if (!Object.keys(draft.selections).length && !draft.client_note && !draft.other_request) {
-            window.localStorage?.removeItem(cartStorageKey());
-            return;
-        }
-        window.localStorage?.setItem(cartStorageKey(), JSON.stringify(draft));
+        writeOrderDraft(draft);
     } catch (error) {
         // localStorage can be unavailable in strict privacy modes.
     }
