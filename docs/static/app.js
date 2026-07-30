@@ -261,7 +261,7 @@ async function renderCurrentRoute() {
 }
 
 function afterRender(route) {
-    if (route.path === "/cliente/pedido/nuevo") {
+    if (route.path === "/cliente/pedido/nuevo" || route.path === "/cliente/dashboard") {
         refreshOrderSummary();
         filterOrderRows();
     }
@@ -326,14 +326,17 @@ async function resolveRoute(route) {
         if (redirect) {
             return redirect;
         }
-        const orders = await fetchOrders({
-            clientId: state.profile.id,
-            month,
-            includeItems: true,
-        });
+        const [orders, products] = await Promise.all([
+            fetchOrders({
+                clientId: state.profile.id,
+                month,
+                includeItems: true,
+            }),
+            fetchProducts(),
+        ]);
         return {
             title: "Tu panel",
-            content: renderClientDashboardPage(state.profile, buildClientDashboard(orders), month),
+            content: renderClientDashboardPage(state.profile, buildClientDashboard(orders), month, products, readOrderDraft()),
         };
     }
 
@@ -1066,6 +1069,14 @@ async function handleClick(event) {
             case "focus-category":
                 document.getElementById(actionNode.dataset.target || "")?.scrollIntoView({ behavior: "smooth", block: "start" });
                 break;
+            case "focus-search":
+                document.querySelector(actionNode.dataset.target || "[data-product-search]")?.focus();
+                break;
+            case "add-product":
+            case "increment-product":
+            case "decrement-product":
+                updateProductQuantity(actionNode, action);
+                break;
             case "switch-role":
                 await switchRole(actionNode.dataset.role);
                 break;
@@ -1095,6 +1106,41 @@ function handleInput(event) {
     if (event.target.matches("[data-product-search]")) {
         filterOrderRows();
     }
+}
+
+function updateProductQuantity(actionNode, action) {
+    const productId = Number(actionNode.dataset.productId || 0);
+    const form = actionNode.closest("[data-order-form]");
+    if (!productId || !form) {
+        return;
+    }
+
+    const input = form.querySelector(`[name="qty_${productId}"]`);
+    if (!input) {
+        return;
+    }
+
+    const current = normalizeQuantity(String(input.value || "").replace(",", "."));
+    const unitNode = form.querySelector(`[name="unit_${productId}"]`);
+    const step = normalizeUnit(unitNode?.value) === "kg" ? 0.5 : 1;
+    let next = current;
+
+    if (action === "decrement-product") {
+        next = Math.max(0, current - step);
+    } else if (current > 0) {
+        next = Math.min(MAX_QUANTITY, current + step);
+    } else {
+        next = step;
+    }
+
+    input.value = next > 0 ? formatQuantityInputValue(next) : "";
+    refreshOrderSummary();
+    persistOrderDraft(form);
+}
+
+function formatQuantityInputValue(value) {
+    const rounded = Math.round(Number(value || 0) * 100) / 100;
+    return String(rounded).replace(/\.0$/, "");
 }
 
 async function submitClientRegister(form) {
@@ -1677,8 +1723,14 @@ function renderAdminPasswordResetPage(admin) {
     `;
 }
 
-function renderClientDashboardPage(client, dashboard, month) {
+function renderClientDashboardPage(client, dashboard, month, products = [], draft = {}) {
     const firstName = firstWord(client.name) || "clienta";
+    const selections = draft.selections || {};
+    const clientNote = draft.client_note || "";
+    const otherRequest = draft.other_request || "";
+    const activeProducts = products.filter((product) => product.is_active !== false);
+    const featuredProducts = selectFeaturedProducts(activeProducts);
+    const quickCategories = CATEGORY_CHOICES.filter(([category]) => activeProducts.some((product) => product.category === category)).slice(0, 5);
     const weeks = dashboard.weeks.length
         ? dashboard.weeks.map((week, index) => `
             <details class="week-card" ${index === 0 ? "open" : ""}>
@@ -1695,60 +1747,120 @@ function renderClientDashboardPage(client, dashboard, month) {
             </details>
         `).join("")
         : `<p class="muted">Todavía no hay pedidos en este mes.</p>`;
+    const featuredMarkup = featuredProducts.length
+        ? featuredProducts.map((product) => renderClientProductCard(product, selectionForProduct(selections, product.id), { category: product.category })).join("")
+        : `<section class="empty-state"><p class="eyebrow">Catálogo</p><h2>Sin productos activos</h2><p class="muted">Puedes usar el campo Otro mientras la administradora actualiza el catálogo.</p></section>`;
 
     return `
-        <section class="client-home-hero">
-            <div>
-                <p class="eyebrow">Inicio</p>
-                <h1>Hola, ${e(firstName)}.</h1>
-                <p>¿Qué frutas y verduras frescas vas a pedir hoy?</p>
+        <section class="mobile-shop-home">
+            <section class="shop-greeting">
+                <div>
+                    <h1>Hola, ${e(firstName)}.</h1>
+                    <p>¿Qué frutas y verduras frescas vas a pedir hoy?</p>
+                </div>
+                <button class="notification-button" type="button" data-action="focus-category" data-target="featured-products" aria-label="Ver productos destacados">
+                    <span class="notification-bell" aria-hidden="true"></span>
+                    ${dashboard.summary.order_count ? `<span class="notification-badge">${dashboard.summary.order_count}</span>` : ""}
+                </button>
+            </section>
+
+            <div class="shop-searchbar mobile-searchbar">
+                <input type="search" data-product-search placeholder="Buscar frutas, verduras y más..." aria-label="Buscar producto">
+                <button class="filter-button" type="button" data-action="focus-category" data-target="featured-products" aria-label="Ver productos"></button>
             </div>
-            <a class="button primary" href="#/cliente/pedido/nuevo">Hacer pedido</a>
+
+            <nav class="category-tabs mobile-category-tabs" aria-label="Categorías principales">
+                ${quickCategories.map(([value, label], index) => `<a class="category-chip ${index === 0 ? "is-active" : ""}" href="#/cliente/pedido/nuevo">${e(label)}</a>`).join("")}
+            </nav>
+
+            <section class="market-promo mobile-market-promo">
+                <div class="market-promo__copy">
+                    <p class="eyebrow">Selección semanal</p>
+                    <h2>Frescura que se siente</h2>
+                    <p>Productos escogidos para llegar directo a tu casa.</p>
+                    <button class="promo-cta" type="button" data-action="focus-category" data-target="featured-products">Ver productos</button>
+                </div>
+                <figure class="promo-produce" aria-hidden="true">
+                    <img class="promo-basket" src="${e(PROMO_IMAGE_URL)}" alt="Canasta con verduras frescas">
+                </figure>
+            </section>
+
+            <form id="client-home-order-form" class="mobile-shop-order" data-form="client-order-create" data-order-form data-delivery-fee="${DELIVERY_FEE}">
+                <input type="hidden" name="source_order_id" value="">
+                <section class="featured-section product-columns" id="featured-products">
+                    <div class="featured-heading">
+                        <h2>Productos destacados</h2>
+                        <a href="#/cliente/pedido/nuevo">Ver todos</a>
+                    </div>
+                    <p class="empty-search" data-product-search-empty hidden>No hay productos con esa búsqueda.</p>
+                    <div class="product-table mobile-product-grid">
+                        ${featuredMarkup}
+                    </div>
+                </section>
+
+                <details class="home-notes-card">
+                    <summary>Otro producto u observaciones</summary>
+                    <label>Otro
+                        <textarea name="other_request" rows="3" maxlength="${MAX_OTHER_REQUEST_LENGTH}" data-other-request placeholder="Pide aquí algo que no esté en el listado.">${e(otherRequest)}</textarea>
+                    </label>
+                    <label>Observaciones
+                        <textarea name="client_note" rows="3" maxlength="${MAX_CLIENT_NOTE_LENGTH}" data-client-note>${e(clientNote)}</textarea>
+                    </label>
+                </details>
+
+                <p class="field-note mobile-order-status" data-inline-status>Agrega productos y envía el pedido cuando esté listo.</p>
+
+                <div class="floating-cart" data-floating-cart hidden>
+                    <div class="floating-cart__summary">
+                        <span data-selected-count>0</span>
+                        <div>
+                            <strong>Ver carrito</strong>
+                            <small><span data-subtotal-estimated>${formatCurrency(0)}</span> en productos</small>
+                        </div>
+                    </div>
+                    <strong data-estimated-total>${formatCurrency(DELIVERY_FEE)}</strong>
+                    <button class="floating-cart__submit" type="submit" data-busy-text="Enviando..." aria-label="Enviar pedido">Enviar</button>
+                </div>
+            </form>
+
+            ${renderClientBottomNav()}
         </section>
 
-        <section class="market-promo">
-            <div>
-                <p class="eyebrow">Selección semanal</p>
-                <h2>Frescura que se siente</h2>
-                <p>Productos escogidos para llegar directo a tu casa.</p>
+        <section class="client-month-panel" id="client-orders">
+            <div class="section-head compact-heading">
+                <div>
+                    <p class="eyebrow">Mis pedidos</p>
+                    <h2>Resumen del mes</h2>
+                    <p class="muted">${e(client.email)} | ${e(client.address)}</p>
+                </div>
+                <div class="hero-actions">
+                    <form class="month-filter" data-form="client-dashboard-filter">
+                        <input type="month" name="month" value="${e(month)}">
+                        <button class="button ghost" type="submit">Ver mes</button>
+                    </form>
+                    <button class="button ghost" type="button" data-action="print-month" data-month="${e(month)}">Imprimir resumen</button>
+                </div>
             </div>
-            <figure class='promo-produce' aria-hidden='true'>
-                <img class='promo-basket' src='${e(PROMO_IMAGE_URL)}' alt='Canasta con verduras frescas'>
-            </figure>
-        </section>
 
-        <section class="section-head compact-heading">
-            <div>
-                <h2>Resumen del mes</h2>
-                <p class="muted">${e(client.email)} | ${e(client.address)}</p>
-            </div>
-            <div class="hero-actions">
-                <form class="month-filter" data-form="client-dashboard-filter">
-                    <input type="month" name="month" value="${e(month)}">
-                    <button class="button ghost" type="submit">Ver mes</button>
-                </form>
-                <button class="button ghost" type="button" data-action="print-month" data-month="${e(month)}">Imprimir resumen</button>
-            </div>
-        </section>
+            <section class="grid three-up">
+                <article class="stat-card">
+                    <span class="stat-value">${formatCurrency(dashboard.summary.monthly_total)}</span>
+                    <span class="stat-label">gasto del mes</span>
+                </article>
+                <article class="stat-card">
+                    <span class="stat-value">${dashboard.summary.order_count}</span>
+                    <span class="stat-label">pedidos del mes</span>
+                </article>
+                <article class="stat-card">
+                    <span class="stat-value">${formatCurrency(dashboard.summary.average_ticket)}</span>
+                    <span class="stat-label">ticket promedio</span>
+                </article>
+            </section>
 
-        <section class="grid three-up">
-            <article class="stat-card">
-                <span class="stat-value">${formatCurrency(dashboard.summary.monthly_total)}</span>
-                <span class="stat-label">gasto del mes</span>
-            </article>
-            <article class="stat-card">
-                <span class="stat-value">${dashboard.summary.order_count}</span>
-                <span class="stat-label">pedidos del mes</span>
-            </article>
-            <article class="stat-card">
-                <span class="stat-value">${formatCurrency(dashboard.summary.average_ticket)}</span>
-                <span class="stat-label">ticket promedio</span>
-            </article>
-        </section>
-
-        <section class="panel">
-            <h2>Desglose semanal</h2>
-            ${weeks}
+            <section class="panel">
+                <h2>Desglose semanal</h2>
+                ${weeks}
+            </section>
         </section>
     `;
 }
@@ -1891,6 +2003,104 @@ function productImageSlug(value) {
         .replace(/^-+|-+$/g, '') || 'producto';
 }
 
+
+function selectFeaturedProducts(products) {
+    const preferred = [
+        /manzana/,
+        /platano|banana/,
+        /naranja/,
+        /tomate/,
+        /lechuga/,
+        /zanahoria/,
+        /palta|aguacate/,
+        /brocoli/,
+    ];
+    const chosen = [];
+    const seen = new Set();
+
+    for (const pattern of preferred) {
+        const match = products.find((product) => !seen.has(product.id) && pattern.test(normalizePhotoText(productDisplayName(product))));
+        if (match) {
+            chosen.push(match);
+            seen.add(match.id);
+        }
+    }
+
+    for (const product of products) {
+        if (chosen.length >= 8) {
+            break;
+        }
+        if (!seen.has(product.id)) {
+            chosen.push(product);
+            seen.add(product.id);
+        }
+    }
+
+    return chosen;
+}
+
+function selectionForProduct(selections, productId) {
+    return selections?.[productId] || selections?.[String(productId)] || {};
+}
+
+function renderClientProductCard(product, selection = {}, options = {}) {
+    const displayName = productDisplayName(product);
+    const category = options.category || product.category || "";
+    const selectedUnit = normalizeUnit(selection.requested_unit || selection.unit || "unidad");
+    const quantity = normalizeQuantity(selection.quantity);
+    const hasQuantity = quantity > 0;
+    const quantityValue = hasQuantity ? formatQuantityInputValue(quantity) : "";
+
+    return `
+        <div class="product-row mobile-product-card ${hasQuantity ? "is-selected" : ""}" data-product-id="${product.id}" data-product-name="${e(productSearchText(product))}" data-product-category="${e(category)}">
+            <button class="favorite-button" type="button" aria-label="Guardar ${e(displayName)} como favorito">&#9825;</button>
+            <div class="product-info">
+                ${renderProductThumb(product)}
+                <div class="product-copy">
+                    <strong>${e(displayName)}</strong>
+                    ${product.presentation ? `<span class="product-presentation">${e(product.presentation)}</span>` : ""}
+                    <span class="product-price">${formatCurrency(product.estimated_price)} <small>referencia</small></span>
+                </div>
+            </div>
+            <div class="product-controls compact-product-controls">
+                <button class="product-add-button" type="button" data-action="add-product" data-product-id="${product.id}" data-add-product ${hasQuantity ? "hidden" : ""}>Agregar</button>
+                <div class="quantity-selector" data-quantity-selector ${hasQuantity ? "" : "hidden"}>
+                    <button class="quantity-step" type="button" data-action="decrement-product" data-product-id="${product.id}" aria-label="Quitar ${e(displayName)}">-</button>
+                    <input
+                        type="number"
+                        step="0.25"
+                        min="0"
+                        max="${MAX_QUANTITY}"
+                        inputmode="decimal"
+                        name="qty_${product.id}"
+                        aria-label="Cantidad ${e(displayName)}"
+                        value="${e(quantityValue)}"
+                        data-price="${product.estimated_price}"
+                        placeholder="0"
+                        data-quantity-input
+                    >
+                    <button class="quantity-step" type="button" data-action="increment-product" data-product-id="${product.id}" aria-label="Agregar ${e(displayName)}">+</button>
+                </div>
+                <select name="unit_${product.id}" aria-label="Unidad ${e(displayName)}" data-unit-input>
+                    ${UNIT_CHOICES.map(([value, label]) => `<option value="${value}" ${selectedUnit === value ? "selected" : ""}>${label}</option>`).join("")}
+                </select>
+            </div>
+        </div>
+    `;
+}
+
+function renderClientBottomNav() {
+    return `
+        <nav class="mobile-bottom-nav" aria-label="Navegación clienta">
+            <a class="active" href="#/cliente/dashboard"><span aria-hidden="true">&#8962;</span>Inicio</a>
+            <a href="#/cliente/pedido/nuevo"><span aria-hidden="true">&#9638;</span>Categorías</a>
+            <a href="#/cliente/dashboard"><span aria-hidden="true">&#9633;</span>Pedidos</a>
+            <button type="button" disabled><span aria-hidden="true">&#9825;</span>Favoritos</button>
+            <a href="#/cliente/perfil"><span aria-hidden="true">&#9675;</span>Perfil</a>
+        </nav>
+    `;
+}
+
 function renderClientOrderFormPage(products, draft, sourceOrder) {
     const selections = draft.selections || {};
     const clientNote = draft.client_note || "";
@@ -1903,43 +2113,10 @@ function renderClientOrderFormPage(products, draft, sourceOrder) {
                 return "";
             }
             return `
-                <div class='panel product-group' id='cat-${e(productImageSlug(category))}' data-product-group data-category='${e(category)}'>
+                <div class="panel product-group" id="cat-${e(productImageSlug(category))}" data-product-group data-category="${e(category)}">
                     <h2>${e(label)}</h2>
                     <div class="product-table">
-                        ${items.map((product) => {
-                            const selection = selections[product.id] || {};
-                            const selectedUnit = normalizeUnit(selection.requested_unit || selection.unit || "unidad");
-                            const displayName = productDisplayName(product);
-                            return `
-                            <div class='product-row' data-product-name='${e(productSearchText(product))}' data-product-category='${e(category)}'>
-                                <div class="product-info">
-                                    ${renderProductThumb(product)}
-                                    <div class="product-copy">
-                                        <strong>${e(displayName)}</strong>
-                                        ${product.presentation ? `<span class="product-presentation">${e(product.presentation)}</span>` : ""}
-                                        <span class="product-price">${formatCurrency(product.estimated_price)} <small>referencia</small></span>
-                                    </div>
-                                </div>
-                                <div class="product-controls">
-                                    <input
-                                        type="number"
-                                        step="0.25"
-                                        min="0"
-                                        max="${MAX_QUANTITY}"
-                                        inputmode="decimal"
-                                        name="qty_${product.id}"
-                                        aria-label="Cantidad ${e(displayName)}"
-                                        value="${selection.quantity ? e(formatQty(selection.quantity).replace(",", ".")) : ""}"
-                                        data-price="${product.estimated_price}"
-                                        placeholder="0"
-                                        data-quantity-input
-                                    >
-                                    <select name="unit_${product.id}" aria-label="Unidad ${e(displayName)}" data-unit-input>
-                                        ${UNIT_CHOICES.map(([value, label]) => `<option value="${value}" ${selectedUnit === value ? "selected" : ""}>${label}</option>`).join("")}
-                                    </select>
-                                </div>
-                            </div>
-                        `; }).join("")}
+                        ${items.map((product) => renderClientProductCard(product, selectionForProduct(selections, product.id), { category })).join("")}
                     </div>
                 </div>
             `;
@@ -1959,7 +2136,7 @@ function renderClientOrderFormPage(products, draft, sourceOrder) {
             <input type="search" data-product-search placeholder="Buscar frutas, verduras y más..." aria-label="Buscar producto">
         </div>
         <nav class="category-tabs" aria-label="Categorías del catálogo">
-            ${CATEGORY_CHOICES.map(([value, label]) => `<button class='category-chip' type='button' data-action='focus-category' data-target='cat-${e(productImageSlug(value))}' data-category-nav='${e(value)}'>${e(label)}</button>`).join('')}
+            ${CATEGORY_CHOICES.map(([value, label]) => `<button class="category-chip" type="button" data-action="focus-category" data-target="cat-${e(productImageSlug(value))}" data-category-nav="${e(value)}">${e(label)}</button>`).join("")}
         </nav>
         <form class="order-layout" data-form="client-order-create" data-order-form data-delivery-fee="${DELIVERY_FEE}">
             <input type="hidden" name="source_order_id" value="${sourceOrder?.id || ""}">
@@ -1989,7 +2166,7 @@ function renderClientOrderFormPage(products, draft, sourceOrder) {
                 <label>Observaciones
                     <textarea name="client_note" rows="3" maxlength="${MAX_CLIENT_NOTE_LENGTH}" data-client-note>${e(clientNote)}</textarea>
                 </label>
-                <p class="field-note" data-draft-status>Carrito guardado en este dispositivo. El campo Otro se revisa manualmente y no suma precio estimado.</p>
+                <p class="field-note" data-inline-status>Carrito guardado en este dispositivo. El campo Otro se revisa manualmente y no suma precio estimado.</p>
                 <button class="button primary full-width" type="submit" data-busy-text="Enviando...">Enviar pedido</button>
             </aside>
             <section class="product-columns">
@@ -2479,30 +2656,44 @@ function refreshOrderSummary() {
     }
 
     const inputs = Array.from(form.querySelectorAll("[data-quantity-input]"));
-    const totalNode = form.querySelector("[data-estimated-total]");
-    const subtotalNode = form.querySelector("[data-subtotal-estimated]");
-    const countNode = form.querySelector("[data-selected-count]");
+    const totalNodes = Array.from(form.querySelectorAll("[data-estimated-total]"));
+    const subtotalNodes = Array.from(form.querySelectorAll("[data-subtotal-estimated]"));
+    const countNodes = Array.from(form.querySelectorAll("[data-selected-count]"));
     const deliveryFee = Number(form.dataset.deliveryFee || DELIVERY_FEE);
 
     let subtotal = 0;
     let selected = 0;
     for (const input of inputs) {
-        const quantity = Number(String(input.value || "").replace(",", "."));
+        const quantity = normalizeQuantity(String(input.value || "").replace(",", "."));
         const price = Number(input.dataset.price || 0);
-        if (quantity > 0) {
+        const row = input.closest(".product-row");
+        const isSelected = quantity > 0;
+        row?.classList.toggle("is-selected", isSelected);
+        const addButton = row?.querySelector("[data-add-product]");
+        if (addButton) {
+            addButton.hidden = isSelected;
+        }
+        const quantitySelector = row?.querySelector("[data-quantity-selector]");
+        if (quantitySelector) {
+            quantitySelector.hidden = !isSelected;
+        }
+        if (isSelected) {
             selected += 1;
             subtotal += quantity * price;
         }
     }
 
-    if (subtotalNode) {
-        subtotalNode.textContent = formatCurrency(subtotal);
+    for (const node of subtotalNodes) {
+        node.textContent = formatCurrency(subtotal);
     }
-    if (totalNode) {
-        totalNode.textContent = formatCurrency(subtotal + deliveryFee);
+    for (const node of totalNodes) {
+        node.textContent = formatCurrency(subtotal + deliveryFee);
     }
-    if (countNode) {
-        countNode.textContent = String(selected);
+    for (const node of countNodes) {
+        node.textContent = String(selected);
+    }
+    for (const node of form.querySelectorAll("[data-floating-cart]")) {
+        node.hidden = selected <= 0;
     }
 }
 
@@ -3239,6 +3430,9 @@ function buildRoleLinkError(role, email) {
 function setFormBusy(form, busy) {
     form.dataset.busy = busy ? "1" : "";
     for (const button of form.querySelectorAll("button")) {
+        if (button.type !== "submit") {
+            continue;
+        }
         if (busy) {
             if (!button.dataset.originalText) {
                 button.dataset.originalText = button.textContent;
