@@ -449,6 +449,7 @@ async function resolveRoute(route) {
             return redirect;
         }
         const orderId = Number(route.path.split("/").pop());
+        await refreshPendingOrderPricing(orderId);
         const order = await fetchOrderById(orderId, { includeClient: true });
         if (!order) {
             return { title: "No encontrado", content: renderNotFound("No encontré ese pedido.") };
@@ -1013,8 +1014,17 @@ function withoutImageUrl(payload) {
 
 async function updateOrderActuals(orderId, status, adminNote, itemUpdates) {
     for (const item of itemUpdates) {
-        const actualPrice = item.actual_price === "" ? null : Math.round(Number(item.actual_price));
-        const actualTotal = actualPrice === null ? null : Math.round(actualPrice * Number(item.quantity));
+        const wasMissing = Boolean(item.was_missing);
+        const numericPrice = Math.round(Number(item.actual_price));
+        const actualPrice = wasMissing || item.actual_price === "" || !Number.isFinite(numericPrice)
+            ? null
+            : Math.max(0, numericPrice);
+        const actualTotal = wasMissing
+            ? 0
+            : actualPrice === null
+                ? null
+                : Math.round(actualPrice * Number(item.quantity));
+
         await runQuery(
             state.client
                 .from("order_items")
@@ -1022,7 +1032,7 @@ async function updateOrderActuals(orderId, status, adminNote, itemUpdates) {
                     actual_price: actualPrice,
                     actual_total: actualTotal,
                     item_note: sanitizeText(item.item_note, 255),
-                    was_missing: Boolean(item.was_missing),
+                    was_missing: wasMissing,
                 })
                 .eq("id", item.id)
                 .eq("order_id", orderId)
@@ -1030,22 +1040,89 @@ async function updateOrderActuals(orderId, status, adminNote, itemUpdates) {
         );
     }
 
+    await recalculateOrderTotals(orderId, {
+        status,
+        admin_note: sanitizeText(adminNote, 500),
+        purchased_at: status === "comprado" || status === "pagado" ? new Date().toISOString() : null,
+    });
+}
+
+async function refreshPendingOrderPricing(orderId) {
+    if (!orderId || state.role !== "admin") {
+        return;
+    }
+
+    const order = await fetchSingleRow(
+        state.client
+            .from("orders")
+            .select("id,status")
+            .eq("id", orderId)
+    );
+    if (!order || String(order.status || "pendiente") !== "pendiente") {
+        return;
+    }
+
+    const currentItems = (await fetchOrderItemsByOrderIds([orderId])).get(orderId) || [];
+    const productIds = [...new Set(currentItems.map((item) => item.product_id).filter(Boolean))];
+    if (!productIds.length) {
+        await recalculateOrderTotals(orderId);
+        return;
+    }
+
+    const products = await runQuery(
+        state.client
+            .from("products")
+            .select("id,estimated_price")
+            .in("id", productIds)
+    );
+    const pricesByProductId = new Map(products.map((product) => [
+        Number(product.id),
+        Math.max(0, Math.round(Number(product.estimated_price) || 0)),
+    ]));
+
+    for (const item of currentItems) {
+        const currentPrice = pricesByProductId.get(item.product_id);
+        if (currentPrice === undefined) {
+            continue;
+        }
+        const currentEstimatedTotal = Math.round(currentPrice * item.quantity);
+        if (item.estimated_price === currentPrice && item.estimated_total === currentEstimatedTotal) {
+            continue;
+        }
+        await runQuery(
+            state.client
+                .from("order_items")
+                .update({
+                    estimated_price: currentPrice,
+                    estimated_total: currentEstimatedTotal,
+                })
+                .eq("id", item.id)
+                .eq("order_id", orderId)
+                .select("id")
+        );
+    }
+
+    await recalculateOrderTotals(orderId);
+}
+
+async function recalculateOrderTotals(orderId, orderPatch = {}) {
     const updatedItems = (await fetchOrderItemsByOrderIds([orderId])).get(orderId) || [];
     const estimatedTotal = updatedItems.reduce((sum, item) => sum + item.estimated_total, 0);
-    const displayTotal = updatedItems.reduce(
-        (sum, item) => sum + (item.actual_total ?? item.estimated_total),
-        0
-    );
+    const hasActualValues = updatedItems.some((item) => item.was_missing || item.actual_total !== null);
+    const displayTotal = updatedItems.reduce((sum, item) => {
+        if (item.was_missing) {
+            return sum;
+        }
+        return sum + (item.actual_total ?? item.estimated_total);
+    }, 0);
 
     await runQuery(
         state.client
             .from("orders")
             .update({
-                status,
-                admin_note: sanitizeText(adminNote, 500),
+                ...orderPatch,
                 estimated_total: estimatedTotal,
-                actual_total: displayTotal,
-                purchased_at: status === "comprado" || status === "pagado" ? new Date().toISOString() : null,
+                actual_total: hasActualValues ? displayTotal : null,
             })
             .eq("id", orderId)
             .select("id")
@@ -1163,7 +1240,7 @@ async function handleClick(event) {
                 await printMonthlySummary(actionNode.dataset.month || currentMonthValue());
                 break;
             case "export-consolidation":
-                await exportConsolidationCsv(actionNode.dataset.month || currentMonthValue());
+                await exportConsolidationXls(actionNode.dataset.month || currentMonthValue());
                 break;
             case "open-whatsapp":
                 await openWhatsAppForOrder(Number(actionNode.dataset.orderId));
@@ -1567,11 +1644,14 @@ async function submitAdminOrderUpdate(form) {
 }
 
 async function printCurrentOrder(orderId, isAdmin) {
+    if (isAdmin) {
+        await refreshPendingOrderPricing(orderId);
+    }
     const order = await fetchOrderById(orderId, isAdmin ? { includeClient: true } : { clientId: state.profile.id });
     if (!order) {
         throw new Error("No encontré el pedido para imprimir.");
     }
-    openPrintWindow(buildOrderPrintMarkup(order, isAdmin));
+    openPrintWindow(buildOrderPrintMarkup(order, isAdmin), `Pedido #${order.id} | ${APP_NAME}`);
 }
 
 async function printMonthlySummary(month) {
@@ -1580,35 +1660,58 @@ async function printMonthlySummary(month) {
         month,
         includeItems: true,
     });
-    openPrintWindow(buildMonthlyPrintMarkup(state.profile, month, orders));
+    openPrintWindow(buildMonthlyPrintMarkup(state.profile, month, orders), `Resumen mensual ${month} | ${APP_NAME}`);
 }
 
-async function exportConsolidationCsv(month) {
+async function exportConsolidationXls(month) {
     const orders = await fetchOrders({ month, includeItems: true });
     const consolidation = buildConsolidation(orders);
-    const lines = [["semana", "producto", "cantidad", "unidad", "precio_unitario", "total"]];
-
-    for (const week of consolidation) {
-        for (const product of week.products) {
-            lines.push([
-                week.label,
-                product.product_name,
-                formatQty(product.cantidad),
-                unitLabel(product.requested_unit),
-                String(product.precio_unitario),
-                String(product.total),
-            ]);
-        }
-    }
-
-    const csv = lines
-        .map((line) => line.map((value) => `"${String(value).replace(/"/g, '""')}"`).join(","))
-        .join("\n");
-
-    downloadFile(`consolidado_${month}.csv`, "text/csv;charset=utf-8", csv);
+    const rows = consolidation.flatMap((week) => week.products.map((product) => `
+        <tr>
+            <td>${e(week.label)}</td>
+            <td>${e(product.product_name)}</td>
+            <td>${e(formatQty(product.cantidad))}</td>
+            <td>${e(unitLabel(product.requested_unit))}</td>
+            <td>${product.precio_unitario}</td>
+            <td>${product.total}</td>
+        </tr>
+    `)).join("");
+    const emptyRow = `<tr><td colspan="6">Sin pedidos para este mes.</td></tr>`;
+    const markup = `
+        <html>
+        <head>
+            <meta charset="utf-8">
+            <style>
+                body { font-family: Arial, sans-serif; color: #173127; }
+                h1 { color: #0b3d27; }
+                table { border-collapse: collapse; width: 100%; }
+                th { background: #1f6d2d; color: #fff; }
+                th, td { border: 1px solid #cfe0c4; padding: 8px; text-align: left; }
+            </style>
+        </head>
+        <body>
+            <h1>Consolidado de compras ${e(month)}</h1>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Semana</th>
+                        <th>Producto</th>
+                        <th>Cantidad</th>
+                        <th>Unidad</th>
+                        <th>Precio unitario</th>
+                        <th>Total</th>
+                    </tr>
+                </thead>
+                <tbody>${rows || emptyRow}</tbody>
+            </table>
+        </body>
+        </html>
+    `;
+    downloadFile(`consolidado_${month}.xls`, "application/vnd.ms-excel;charset=utf-8", `\ufeff${markup}`);
 }
 
 async function openWhatsAppForOrder(orderId) {
+    await refreshPendingOrderPricing(orderId);
     const order = await fetchOrderById(orderId, { includeClient: true });
     if (!order) {
         throw new Error("No encontré el pedido.");
@@ -1619,22 +1722,18 @@ async function openWhatsAppForOrder(orderId) {
         throw new Error("La clienta no tiene un número válido para WhatsApp.");
     }
 
-    const itemLines = order.items.map((item) => `- ${item.product_name} x ${formatOrderItemQuantity(item)}`);
-    if (order.other_request) {
-        itemLines.push(`- Otro: ${order.other_request}`);
-    }
+    openPrintWindow(buildOrderPrintMarkup(order, true), `Pedido #${order.id} | ${APP_NAME}`);
 
     const lines = [
         `Hola ${order.client_name || ""},`,
-        `te comparto el resumen del pedido #${order.id}.`,
+        `te comparto la boleta PDF del pedido #${order.id} de Verdulería Isa.`,
+        `Total final o proyectado: ${formatCurrency(order.display_total)}.`,
         "",
-        ...itemLines,
-        "",
-        `Total actual/proyectado: ${formatCurrency(order.display_total)}`,
+        "Adjunto la boleta en PDF con el detalle del pedido.",
     ];
 
     const text = encodeURIComponent(lines.join("\n").trim());
-    window.open(`https://wa.me/${phone}?text=${text}`, "_blank", "noopener");
+    window.setTimeout(() => window.open(`https://wa.me/${phone}?text=${text}`, "_blank", "noopener"), 350);
 }
 
 function renderShell(title, content) {
@@ -2805,7 +2904,7 @@ function renderAdminConsolidationPage(consolidation, month) {
                     <input type="month" name="month" value="${e(month)}">
                     <button class="button ghost" type="submit">Filtrar mes</button>
                 </form>
-                <button class="button primary" type="button" data-action="export-consolidation" data-month="${e(month)}">Exportar CSV</button>
+                <button class="button primary" type="button" data-action="export-consolidation" data-month="${e(month)}">Exportar XLS</button>
                 <a class="button ghost" href="#/admin/dashboard">Volver</a>
             </div>
         </section>
@@ -3303,43 +3402,115 @@ function normalizeQuantity(value) {
 }
 
 function buildOrderPrintMarkup(order, includeClient) {
+    const logoUrl = assetUrl("./static/logo-verduleria-isa.png");
+    const clientParts = includeClient
+        ? [order.client_name, order.client_email, order.client_phone].filter(Boolean)
+        : [];
+    const clientMeta = clientParts.map((part) => e(part)).join('<span class="receipt-divider">|</span>');
+    const noteBlocks = [
+        order.client_note ? `<div><strong>Observaciones</strong><p>${e(order.client_note)}</p></div>` : "",
+        order.other_request ? `<div><strong>Otro</strong><p>${e(order.other_request)}</p></div>` : "",
+    ].filter(Boolean).join("");
+
     return `
-        <div class="print-sheet">
-            <h1>Pedido #${order.id}</h1>
-            <p>${e(formatDateTime(order.created_at))} | Estado: ${e(statusLabel(order.status))}</p>
-            ${includeClient ? `<p>Clienta: ${e(order.client_name)} | ${e(order.client_email)} | ${e(order.client_phone)}</p>` : ""}
-            ${order.client_note ? `<p>Observaciones: ${e(order.client_note)}</p>` : ""}
-            ${order.other_request ? `<p>Otro: ${e(order.other_request)}</p>` : ""}
-            <div class="print-sheet__summary">
-                <div class="print-sheet__card">
-                    <strong>${formatCurrency(order.display_subtotal)}</strong>
-                    <p>${e(order.display_subtotal_label)}</p>
+        <article class="receipt-sheet">
+            <header class="receipt-header">
+                <div class="receipt-brand-block">
+                    <img class="receipt-logo" src="${e(logoUrl)}" alt="${e(APP_NAME)}">
                 </div>
-                <div class="print-sheet__card">
-                    <strong>${formatCurrency(order.delivery_fee)}</strong>
-                    <p>Despacho fijo</p>
+                <div class="receipt-heading-block">
+                    <div class="receipt-decoration" aria-hidden="true"></div>
+                    <h1>Pedido #${order.id}</h1>
+                    <span class="receipt-rule" aria-hidden="true"></span>
+                    ${clientMeta ? `
+                        <p class="receipt-client-line">
+                            <span class="receipt-client-icon" aria-hidden="true"></span>
+                            ${clientMeta}
+                        </p>
+                    ` : ""}
+                    <p class="receipt-date">${e(formatDateTime(order.created_at))} | Estado: ${e(statusLabel(order.status))}</p>
                 </div>
-                <div class="print-sheet__card">
-                    <strong>${formatCurrency(order.display_total)}</strong>
-                    <p>Total final</p>
+            </header>
+
+            <section class="receipt-delivery-card">
+                <span class="receipt-round-icon receipt-round-icon--truck" aria-hidden="true"></span>
+                <div>
+                    <h2>Datos de entrega</h2>
+                    <p>${e(order.client_address || "Dirección no informada")}</p>
                 </div>
-            </div>
-            <table>
-                <thead>
-                    <tr>
-                        <th>Producto</th>
-                        <th>Cantidad</th>
-                        <th>Estimado</th>
-                        <th>Real</th>
-                        <th>Nota</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    ${renderReadOnlyOrderItemRows(order.items)}
-                </tbody>
-            </table>
-        </div>
+            </section>
+
+            <section class="receipt-summary-panel">
+                <h2><span aria-hidden="true">&lsaquo;</span> Pedido #${order.id} <span aria-hidden="true">&rsaquo;</span></h2>
+                <div class="receipt-summary-grid">
+                    <article class="receipt-summary-card">
+                        <span class="receipt-card-icon receipt-card-icon--basket" aria-hidden="true"></span>
+                        <strong>${formatCurrency(order.subtotal_estimated)}</strong>
+                        <p>Subtotal estimado<br>de productos</p>
+                    </article>
+                    <article class="receipt-summary-card receipt-summary-card--accent">
+                        <span class="receipt-card-icon receipt-card-icon--truck" aria-hidden="true"></span>
+                        <strong>${formatCurrency(order.delivery_fee)}</strong>
+                        <p>Despacho fijo</p>
+                    </article>
+                    <article class="receipt-summary-card">
+                        <span class="receipt-card-icon receipt-card-icon--total" aria-hidden="true"></span>
+                        <strong>${formatCurrency(order.display_total)}</strong>
+                        <p>Total final o proyectado</p>
+                    </article>
+                </div>
+            </section>
+
+            ${noteBlocks ? `<section class="receipt-notes">${noteBlocks}</section>` : ""}
+
+            <section class="receipt-products-panel">
+                <h2><span class="receipt-leaf-badge" aria-hidden="true"></span> Productos</h2>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Producto</th>
+                            <th>Cantidad</th>
+                            <th>Subtotal estimado</th>
+                            <th>Subtotal real</th>
+                            <th>Nota</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${renderReceiptOrderItemRows(order.items)}
+                    </tbody>
+                </table>
+            </section>
+
+            <footer class="receipt-footer">
+                <span class="receipt-heart" aria-hidden="true"></span>
+                <p>Gracias por confiar en Verdulería Isa.<br><strong>¡Llevamos frescura a tu mesa!</strong></p>
+            </footer>
+        </article>
     `;
+}
+
+function renderReceiptOrderItemRows(items = []) {
+    if (!items.length) {
+        return `<tr><td colspan="5">Sin productos.</td></tr>`;
+    }
+
+    return items.map((item) => {
+        const actualTotal = item.was_missing
+            ? "Faltó"
+            : item.actual_total === null || item.actual_total === undefined
+                ? "-"
+                : formatCurrency(item.actual_total);
+        const note = [item.was_missing ? "No disponible" : "", item.item_note || ""].filter(Boolean).join(" · ") || "-";
+        return `
+            <tr>
+                <td><span class="receipt-row-leaf" aria-hidden="true"></span>${e(item.product_name)}</td>
+                <td>${e(formatOrderItemQuantity(item))}</td>
+                <td>${formatCurrency(item.estimated_total)}</td>
+                <td>${e(actualTotal)}</td>
+                <td>${e(note)}</td>
+            </tr>
+        `;
+    }).join("");
 }
 
 function buildMonthlyPrintMarkup(client, month, orders) {
@@ -3387,35 +3558,174 @@ function buildMonthlyPrintMarkup(client, month, orders) {
     `;
 }
 
-function openPrintWindow(markup) {
-    const popup = window.open("", "_blank", "noopener,noreferrer,width=960,height=720");
+function openPrintWindow(markup, title = `Imprimir | ${APP_NAME}`) {
+    const popup = window.open("", "_blank", "width=1040,height=760");
     if (!popup) {
         throw new Error("Tu navegador bloqueó la ventana de impresión.");
     }
 
     popup.document.open();
-    popup.document.write(`
+    popup.document.write(buildPrintDocument(markup, title));
+    popup.document.close();
+
+    let printed = false;
+    const waitForImages = () => {
+        const images = Array.from(popup.document.images || []);
+        if (!images.length) {
+            return Promise.resolve();
+        }
+        return Promise.allSettled(images.map((image) => {
+            if (image.complete) {
+                return Promise.resolve();
+            }
+            return new Promise((resolve) => {
+                image.onload = resolve;
+                image.onerror = resolve;
+            });
+        }));
+    };
+    const printWhenReady = () => {
+        if (printed) {
+            return;
+        }
+        printed = true;
+        waitForImages().finally(() => {
+            popup.setTimeout(() => {
+                popup.focus();
+                popup.print();
+            }, 250);
+        });
+    };
+
+    popup.addEventListener("load", printWhenReady, { once: true });
+    popup.setTimeout(printWhenReady, 1200);
+}
+
+function buildPrintDocument(markup, title) {
+    return `
         <!DOCTYPE html>
         <html lang="es">
         <head>
             <meta charset="utf-8">
-            <title>Imprimir | ${e(APP_NAME)}</title>
-            <style>
-                body { font-family: Aptos, "Segoe UI", Arial, sans-serif; margin: 24px; color: #173127; }
-                h1 { margin-bottom: 8px; }
-                p { margin: 4px 0; }
-                table { width: 100%; border-collapse: collapse; margin-top: 16px; }
-                th, td { text-align: left; padding: 10px 8px; border-bottom: 1px solid #d9e2db; }
-                .print-sheet__summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-top: 16px; }
-                .print-sheet__card { border: 1px solid #d9e2db; border-radius: 16px; padding: 12px; background: #fafcf9; }
-            </style>
+            <meta name="viewport" content="width=device-width, initial-scale=1">
+            <base href="${e(appBaseUrl())}">
+            <title>${e(title)}</title>
+            <style>${buildPrintStyles()}</style>
         </head>
         <body>${markup}</body>
         </html>
-    `);
-    popup.document.close();
-    popup.focus();
-    popup.print();
+    `;
+}
+
+function buildPrintStyles() {
+    return `
+        @page { size: A4; margin: 9mm; }
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            background: #ffffff;
+            color: #183829;
+            font-family: Aptos, "Segoe UI", Arial, sans-serif;
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+        }
+        h1, h2, h3, p { margin: 0; }
+        .receipt-sheet {
+            width: min(100%, 1060px);
+            min-height: 100vh;
+            margin: 0 auto;
+            padding: 26px 28px 22px;
+            background:
+                radial-gradient(circle at 94% 93%, rgba(139, 195, 74, 0.22) 0 78px, transparent 79px),
+                linear-gradient(180deg, #ffffff 0%, #ffffff 68%, #fbf9f0 100%);
+            border: 1px solid #d8e8c7;
+        }
+        .receipt-header {
+            display: grid;
+            grid-template-columns: 44% 56%;
+            gap: 22px;
+            align-items: center;
+            margin-bottom: 22px;
+        }
+        .receipt-logo { width: min(100%, 510px); height: 178px; object-fit: contain; object-position: left center; display: block; }
+        .receipt-heading-block { text-align: center; position: relative; padding-top: 8px; }
+        .receipt-heading-block h1 { font-size: 52px; line-height: 1; color: #2d6d29; font-weight: 800; }
+        .receipt-rule { width: 58px; height: 4px; background: #f37a13; border-radius: 99px; display: inline-block; margin: 17px auto 14px; }
+        .receipt-client-line { display: inline-flex; align-items: center; justify-content: center; gap: 10px; flex-wrap: wrap; color: #1f2f29; font-size: 15px; }
+        .receipt-client-icon { width: 42px; height: 42px; border-radius: 50%; background: #edf6df; position: relative; display: inline-block; }
+        .receipt-client-icon::before { content: ""; position: absolute; width: 13px; height: 13px; border-radius: 50%; background: #70a83a; top: 9px; left: 14px; }
+        .receipt-client-icon::after { content: ""; position: absolute; width: 22px; height: 11px; border-radius: 13px 13px 5px 5px; background: #70a83a; left: 10px; bottom: 9px; }
+        .receipt-divider { color: #74a547; margin: 0 2px; }
+        .receipt-date { margin-top: 8px; color: #65766c; font-size: 13px; }
+        .receipt-decoration { position: absolute; right: 0; top: 0; width: 88px; height: 88px; opacity: 0.9; }
+        .receipt-decoration::before, .receipt-decoration::after { content: ""; position: absolute; border-radius: 50% 0 50% 50%; background: #9bcc62; transform: rotate(-35deg); }
+        .receipt-decoration::before { width: 38px; height: 22px; right: 10px; top: 7px; }
+        .receipt-decoration::after { width: 58px; height: 31px; right: 34px; top: 34px; background: #76ad37; }
+        .receipt-delivery-card, .receipt-summary-panel, .receipt-products-panel, .receipt-notes {
+            border: 1.5px solid #a8d47d;
+            border-radius: 20px;
+            background: rgba(255, 255, 255, 0.88);
+            box-shadow: 0 8px 22px rgba(16, 83, 39, 0.05);
+        }
+        .receipt-delivery-card { display: flex; align-items: center; gap: 24px; padding: 22px 28px; margin-bottom: 16px; }
+        .receipt-delivery-card h2 { font-size: 25px; color: #2d6d29; }
+        .receipt-delivery-card p { font-size: 22px; color: #1f2f29; margin-top: 5px; }
+        .receipt-round-icon { width: 56px; height: 56px; border-radius: 50%; background: linear-gradient(135deg, #8cc63f, #3a8f2e); display: inline-block; position: relative; flex: 0 0 auto; }
+        .receipt-round-icon::before { content: ""; position: absolute; inset: 16px 12px 18px; border: 3px solid #fff; border-radius: 3px; }
+        .receipt-round-icon::after { content: ""; position: absolute; width: 14px; height: 14px; border: 3px solid #fff; border-radius: 50%; right: 9px; bottom: 10px; }
+        .receipt-summary-panel { padding: 20px 22px; margin-bottom: 16px; }
+        .receipt-summary-panel > h2 { text-align: center; color: #2d6d29; font-size: 32px; margin-bottom: 14px; }
+        .receipt-summary-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px; }
+        .receipt-summary-card { min-height: 132px; border: 1px solid #c9e3ae; border-radius: 18px; display: grid; grid-template-columns: 74px 1fr; grid-template-rows: auto auto; align-items: center; column-gap: 16px; padding: 18px; background: #fffefb; }
+        .receipt-summary-card strong { font-size: 42px; line-height: 1; color: #2b5f2a; }
+        .receipt-summary-card p { grid-column: 2; color: #1f2f29; font-size: 18px; line-height: 1.22; margin-top: 7px; }
+        .receipt-summary-card--accent strong { color: #f26a0f; }
+        .receipt-card-icon { grid-row: 1 / span 2; width: 56px; height: 56px; border-radius: 50%; background: #edf6df; display: inline-block; position: relative; }
+        .receipt-card-icon::before { content: ""; position: absolute; inset: 16px; border: 3px solid #6cab38; border-radius: 3px; }
+        .receipt-card-icon--truck { background: #fff1dc; }
+        .receipt-card-icon--truck::before { border-color: #f26a0f; }
+        .receipt-card-icon--total::before { content: "$"; border: 0; color: #6cab38; font-weight: 800; font-size: 26px; inset: 13px 0 0; text-align: center; }
+        .receipt-notes { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; padding: 16px 20px; margin-bottom: 16px; }
+        .receipt-notes strong { color: #17412d; font-size: 18px; }
+        .receipt-notes p { color: #42574b; font-size: 15px; margin-top: 6px; }
+        .receipt-products-panel { padding: 20px 22px 14px; }
+        .receipt-products-panel h2 { color: #2d6d29; font-size: 29px; display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
+        .receipt-leaf-badge { width: 44px; height: 44px; border-radius: 50%; background: linear-gradient(135deg, #87c946, #3a8f2e); display: inline-block; position: relative; }
+        .receipt-leaf-badge::before, .receipt-row-leaf { content: ""; display: inline-block; width: 12px; height: 8px; border-radius: 50% 0 50% 50%; background: #8abf45; transform: rotate(-35deg); }
+        .receipt-leaf-badge::before { position: absolute; left: 16px; top: 17px; background: #fff; }
+        table { width: 100%; border-collapse: separate; border-spacing: 0; overflow: hidden; border-radius: 14px; border: 1px solid #cfe2bd; }
+        th { background: linear-gradient(180deg, #3b832f, #276b28); color: #fff; font-size: 16px; padding: 11px 12px; text-align: center; }
+        th:first-child { text-align: left; }
+        td { border-top: 1px solid #dcebcf; border-right: 1px solid #dcebcf; padding: 8px 12px; font-size: 16px; color: #1f2f29; text-align: center; }
+        td:first-child { text-align: left; }
+        td:last-child, th:last-child { border-right: 0; }
+        .receipt-row-leaf { margin-right: 10px; vertical-align: middle; }
+        .receipt-footer { display: grid; grid-template-columns: 96px 1fr; align-items: center; width: 68%; margin: 34px 0 0; border-radius: 20px; border: 1px solid #efe1bf; background: linear-gradient(90deg, #fffaf0, #f8f4e9); padding: 18px 24px; }
+        .receipt-footer p { font-size: 20px; text-align: center; color: #1f2f29; }
+        .receipt-footer strong { color: #2d6d29; }
+        .receipt-heart { width: 42px; height: 32px; position: relative; display: inline-block; justify-self: center; }
+        .receipt-heart::before, .receipt-heart::after { content: ""; position: absolute; width: 22px; height: 34px; border: 3px solid #2d6d29; border-bottom: 0; border-radius: 22px 22px 0 0; transform: rotate(-45deg); transform-origin: 0 100%; }
+        .receipt-heart::after { left: 20px; transform: rotate(45deg); transform-origin: 100% 100%; }
+        .print-sheet { width: min(100%, 960px); margin: 0 auto; padding: 26px; }
+        .print-sheet h1 { margin-bottom: 8px; }
+        .print-sheet p { margin: 4px 0; }
+        .print-sheet table { margin-top: 16px; }
+        .print-sheet th, .print-sheet td { text-align: left; padding: 10px 8px; border-bottom: 1px solid #d9e2db; }
+        .print-sheet__summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-top: 16px; }
+        .print-sheet__card { border: 1px solid #d9e2db; border-radius: 16px; padding: 12px; background: #fafcf9; }
+        @media print {
+            body { background: #fff; }
+            .receipt-sheet { border: 0; min-height: auto; box-shadow: none; padding: 0; }
+        }
+        @media (max-width: 760px) {
+            .receipt-sheet { padding: 18px 14px; }
+            .receipt-header, .receipt-summary-grid, .receipt-notes { grid-template-columns: 1fr; }
+            .receipt-logo { height: 130px; object-position: center; }
+            .receipt-heading-block h1 { font-size: 38px; }
+            .receipt-summary-card strong { font-size: 34px; }
+            .receipt-footer { width: 100%; }
+        }
+    `;
 }
 
 function parseHashRoute() {
@@ -3723,6 +4033,22 @@ function writePreferredRole(role) {
 
 function currentAppUrl() {
     return window.location.href.split("#")[0];
+}
+
+function appBaseUrl() {
+    try {
+        return new URL(".", currentAppUrl()).href;
+    } catch (error) {
+        return "./";
+    }
+}
+
+function assetUrl(path) {
+    try {
+        return new URL(path, appBaseUrl()).href;
+    } catch (error) {
+        return path;
+    }
 }
 
 function currentSupabaseProjectLabel() {
