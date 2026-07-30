@@ -2010,9 +2010,10 @@ function productImageSrc(product) {
 }
 
 function productImageCandidates(product) {
+    const savedUrl = safeProductImageUrl(product.image_url);
     const candidates = [
-        safeProductImageUrl(product.image_url),
         ...productStorageImageUrls(product),
+        savedUrl,
         productPhotoUrl(productPhotoTerms(product)),
         productFallbackImageSrc(product),
     ].filter(Boolean);
