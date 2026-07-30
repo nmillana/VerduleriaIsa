@@ -21,6 +21,7 @@ const ROLE_STORAGE_KEY = "verduleriaisa.role.v1";
 const MAX_CLIENT_NOTE_LENGTH = 500;
 const MAX_OTHER_REQUEST_LENGTH = 500;
 const MAX_QUANTITY = 999;
+const ADMIN_ACCESS_EMAILS = new Set(["isabelsoledadster@gmail.com", "nataliamillanassler@gmail.com"]);
 const PRODUCT_BASE_FIELDS = "id,name,display_name,presentation,category,estimated_price,is_active,created_at,updated_at";
 const PRODUCT_FIELDS_WITH_IMAGE = `${PRODUCT_BASE_FIELDS},image_url`;
 const UNIT_CHOICES = [["kg", "Kg"], ["unidad", "Unidad"]];
@@ -145,6 +146,7 @@ const state = {
     route: { path: "/", query: new URLSearchParams() },
     flash: null,
     initialized: false,
+    productImageColumnAvailable: null,
 };
 
 const appRoot = document.getElementById("app");
@@ -377,6 +379,9 @@ async function resolveRoute(route) {
             return redirectView(`/cliente/pedido/${editOrder.id}`, "Solo puedes editar pedidos pendientes.", "error");
         }
         const sourceOrder = !editOrder && sourceId ? await fetchOrderById(sourceId, { clientId: state.profile.id }) : null;
+        const latestOrder = !editOrder && !sourceOrder
+            ? (await fetchOrders({ clientId: state.profile.id, includeItems: true, limit: 1 }))[0] || null
+            : null;
         const baseOrder = editOrder || sourceOrder;
         const draft = baseOrder
             ? {
@@ -389,7 +394,7 @@ async function resolveRoute(route) {
             : readOrderDraft();
         return {
             title: editOrder ? "Editar pedido" : "Nuevo pedido",
-            content: renderClientOrderFormPage(products, draft, sourceOrder, editOrder),
+            content: renderClientOrderFormPage(products, draft, sourceOrder, editOrder, latestOrder),
         };
     }
 
@@ -570,6 +575,9 @@ function setActiveProfile(role, profile) {
 
 async function linkAndFetchAdmin(user) {
     const email = normalizeEmail(user.email);
+    if (!isAdminAccessEmail(email)) {
+        return null;
+    }
     const fields = "id,name,email,auth_user_id,must_reset_password,password_reset_at";
 
     let admin = await fetchSingleRow(
@@ -659,13 +667,18 @@ async function touchClientLogin(clientId) {
 }
 
 async function fetchProducts(options = {}) {
+    const fields = state.productImageColumnAvailable === false ? PRODUCT_BASE_FIELDS : PRODUCT_FIELDS_WITH_IMAGE;
     let rows;
     try {
-        rows = await runQuery(buildProductsQuery(PRODUCT_FIELDS_WITH_IMAGE, options));
+        rows = await runQuery(buildProductsQuery(fields, options));
+        if (fields === PRODUCT_FIELDS_WITH_IMAGE) {
+            state.productImageColumnAvailable = true;
+        }
     } catch (error) {
         if (!isMissingProductImageColumn(error)) {
             throw error;
         }
+        state.productImageColumnAvailable = false;
         rows = await runQuery(buildProductsQuery(PRODUCT_BASE_FIELDS, options));
     }
 
@@ -723,6 +736,10 @@ async function fetchOrders(options = {}) {
 
     if (options.status) {
         query = query.eq("status", options.status);
+    }
+
+    if (options.limit) {
+        query = query.limit(Math.max(1, Number(options.limit) || 1));
     }
 
     const orders = (await runQuery(query)).map((row) => decorateOrderTotals(normalizeOrder(row)));
@@ -1360,6 +1377,9 @@ async function submitAdminLogin(form) {
     if (!email) {
         throw new Error("Escribe el correo administrador completo.");
     }
+    if (!isAdminAccessEmail(email)) {
+        throw new Error("Este correo no tiene acceso de administración.");
+    }
     if (!password) {
         throw new Error("Escribe la contraseña. Para primer ingreso usa la temporal verduleria.");
     }
@@ -1653,7 +1673,7 @@ function renderNavigation() {
             `<a href="#/cliente/dashboard">Mi panel</a>`,
             `<a href="#/cliente/pedido/nuevo">Nuevo pedido</a>`,
             `<a href="#/cliente/perfil">Mi perfil</a>`,
-            state.profiles.admin ? `<button type="button" data-action="switch-role" data-role="admin">Administrador</button>` : "",
+            canShowAdminAccess() ? `<button type="button" data-action="switch-role" data-role="admin">Administrador</button>` : "",
             `<button type="button" data-action="logout">Salir</button>`,
         ].filter(Boolean).join("");
     }
@@ -1860,7 +1880,7 @@ function renderClientDashboardPage(client, dashboard, month) {
                         <input type="month" name="month" value="${e(month)}">
                         <button class="button ghost" type="submit">Ver mes</button>
                     </form>
-                    <button class="button ghost" type="button" data-action="print-month" data-month="${e(month)}">Imprimir resumen</button>
+                    ${dashboard.latest_order ? `<a class="button ghost" href="#/cliente/pedido/nuevo?source=${dashboard.latest_order.id}">Repetir último pedido</a>` : ""}
                 </div>
             </div>
 
@@ -1911,6 +1931,8 @@ function renderClientProfilePage(client) {
                 </label>
                 <div class="hero-actions">
                     <button class="button primary" type="submit">Guardar datos</button>
+                    ${canShowAdminAccess() ? `<button class="button ghost" type="button" data-action="switch-role" data-role="admin">Administrador</button>` : ""}
+                    <button class="button ghost" type="button" data-action="logout">Salir</button>
                     <a class="button ghost" href="#/cliente/dashboard">Volver</a>
                 </div>
             </form>
@@ -1919,9 +1941,8 @@ function renderClientProfilePage(client) {
 }
 
 function renderClientOrderCard(order) {
-    const itemLines = order.items.length
-        ? order.items.map((item) => `<li>${e(item.product_name)} x ${e(formatOrderItemQuantity(item))}</li>`).join("")
-        : `<li>${order.other_request ? "Solicitud en Otro" : "Pedido sin productos del catálogo"}</li>`;
+    const actionHref = `#/cliente/pedido/nuevo?${order.status === "pendiente" ? "edit" : "source"}=${order.id}`;
+    const actionLabel = order.status === "pendiente" ? "Editar solicitud" : "Repetir pedido";
     return `
         <article class="order-card">
             <div class="order-card__top">
@@ -1931,50 +1952,12 @@ function renderClientOrderCard(order) {
                 </div>
                 <div class="hero-actions">
                     <a class="button ghost" href="#/cliente/pedido/${order.id}">Ver detalle</a>
-                    <a class="button ghost" href="#/cliente/pedido/nuevo?${order.status === "pendiente" ? "edit" : "source"}=${order.id}">${order.status === "pendiente" ? "Editar solicitud" : "Repetir pedido"}</a>
+                    <a class="button ghost" href="${actionHref}">${actionLabel}</a>
                 </div>
             </div>
-            <ul class="simple-list">
-                ${itemLines}
-            </ul>
-            ${order.other_request ? `<p class="muted">Otro: ${e(order.other_request)}</p>` : ""}
             <p class="order-total">Total: ${formatCurrency(order.display_total)}</p>
         </article>
     `;
-}
-
-function renderReadOnlyOrderItemRows(items, emptyColspan = 5) {
-    return items.length
-        ? items.map((item) => `
-            <tr>
-                <td>${e(item.product_name)}</td>
-                <td>${e(formatOrderItemQuantity(item))}</td>
-                <td>${formatCurrency(item.estimated_total)}</td>
-                <td>${item.actual_total === null ? "-" : formatCurrency(item.actual_total)}</td>
-                <td>${e(item.item_note || "-")}</td>
-            </tr>
-        `).join("")
-        : `<tr><td colspan="${emptyColspan}">Sin productos del catálogo. Revisa el campo Otro.</td></tr>`;
-}
-
-function renderAdminOrderItemEditRows(items) {
-    return items.length
-        ? items.map((item) => `
-            <tr data-item-row data-item-id="${item.id}" data-quantity="${item.quantity}">
-                <td>${e(item.product_name)}</td>
-                <td>${e(formatOrderItemQuantity(item))}</td>
-                <td>${formatCurrency(item.estimated_price)}</td>
-                <td><input type="number" min="0" name="actual_${item.id}" value="${item.actual_price === null ? "" : e(String(item.actual_price))}"></td>
-                <td>
-                    <label class="checkbox-inline">
-                        <input type="checkbox" name="missing_${item.id}" value="1" ${item.was_missing ? "checked" : ""}>
-                        sí
-                    </label>
-                </td>
-                <td><input type="text" name="note_${item.id}" value="${e(item.item_note || "")}" placeholder="Ej. se reemplazó, faltó, cambió precio"></td>
-            </tr>
-        `).join("")
-        : `<tr><td colspan="6">Sin productos del catálogo. Revisa el campo Otro.</td></tr>`;
 }
 
 function renderProductThumb(product, className = 'product-thumb') {
@@ -2044,7 +2027,6 @@ function productImageSlug(value) {
 function renderClientAppHeader(title = "Catálogo") {
     return `
         <header class="client-app-header">
-            <button class="app-back-button" type="button" data-action="logout" aria-label="Salir de la app"></button>
             <img class="client-app-logo" src="./static/logo-verduleria-isa.png" alt="${e(APP_NAME)}">
             <button class="app-cart-button" type="button" data-action="open-cart-review" aria-label="Ver carrito">
                 <span class="app-cart-icon" aria-hidden="true"></span>
@@ -2144,21 +2126,28 @@ function renderClientBottomNav(active = "inicio") {
         const icon = `<span class="nav-icon ${iconClass}" aria-hidden="true"></span>`;
         return `<a class="${activeClass.trim()}" href="${href}">${icon}<span>${label}</span></a>`;
     };
+    const adminItem = canShowAdminAccess()
+        ? `<button type="button" data-action="switch-role" data-role="admin"><span class="nav-icon nav-icon-admin" aria-hidden="true"></span><span>Admin</span></button>`
+        : "";
     return `
-        <nav class="mobile-bottom-nav client-top-nav" aria-label="Navegación clienta">
+        <nav class="mobile-bottom-nav client-top-nav ${adminItem ? "has-admin" : ""}" aria-label="Navegación clienta">
             ${item("inicio", "#/cliente/pedido/nuevo", "Inicio", "nav-icon-home")}
             ${item("pedidos", "#/cliente/dashboard", "Pedidos", "nav-icon-bag")}
             ${item("perfil", "#/cliente/perfil", "Perfil", "nav-icon-user")}
+            ${adminItem}
         </nav>
     `;
 }
 
-function renderClientOrderFormPage(products, draft, sourceOrder, editOrder) {
+function renderClientOrderFormPage(products, draft, sourceOrder, editOrder, latestOrder) {
     const selections = draft.selections || {};
     const clientNote = draft.client_note || "";
     const otherRequest = draft.other_request || "";
     const sourceOrderId = sourceOrder?.id || draft.source_order_id || "";
     const editOrderId = editOrder?.id || draft.edit_order_id || "";
+    const repeatLatestAction = latestOrder && !editOrder && !sourceOrder
+        ? `<a class="button ghost repeat-latest-button" href="#/cliente/pedido/nuevo?source=${latestOrder.id}">Repetir último pedido</a>`
+        : "";
     const groupedProducts = groupProducts(products);
     const activeCategories = CATEGORY_CHOICES.filter(([category]) => (groupedProducts.get(category) || []).length > 0);
     const groupsMarkup = activeCategories
@@ -2189,21 +2178,17 @@ function renderClientOrderFormPage(products, draft, sourceOrder, editOrder) {
                 ${editOrder ? `<div class="badge-block">Editando pedido #${editOrder.id}</div>` : sourceOrder ? `<div class="badge-block">Basado en el pedido #${sourceOrder.id}</div>` : ""}
             </section>
 
+            ${repeatLatestAction ? `<section class="catalog-primary-action">${repeatLatestAction}</section>` : ""}
+
             <section class="catalog-toolbar">
                 <div class="shop-searchbar catalog-search">
                     <input type="search" data-product-search placeholder="Buscar frutas, verduras y más..." aria-label="Buscar producto">
                 </div>
-                <a class="catalog-sort-button" href="#/cliente/dashboard">Más pedidos</a>
             </section>
 
             <nav class="category-tabs catalog-category-tabs" aria-label="Categorías del catálogo">
                 ${activeCategories.map(([value, label]) => `<button class="category-chip" type="button" data-action="focus-category" data-target="cat-${e(productImageSlug(value))}" data-category-nav="${e(value)}">${e(label)}</button>`).join("")}
             </nav>
-
-            <section class="catalog-week-banner">
-                <span aria-hidden="true"></span>
-                <strong>Verduras frescas seleccionadas para esta semana</strong>
-            </section>
 
             <section class="product-columns catalog-products" id="catalog-products">
                 <p class="empty-search" data-product-search-empty hidden>No hay productos con esa búsqueda.</p>
@@ -2221,18 +2206,6 @@ function renderClientOrderFormPage(products, draft, sourceOrder, editOrder) {
             </details>
 
             <p class="field-note mobile-order-status" data-inline-status>Carrito guardado en este dispositivo. El campo Otro se revisa manualmente y no suma precio estimado.</p>
-
-            <div class="floating-cart" data-floating-cart hidden>
-                <div class="floating-cart__summary">
-                    <span data-selected-count>0</span>
-                    <div>
-                        <strong>Ver carrito</strong>
-                        <small><span data-subtotal-estimated>${formatCurrency(0)}</span> en productos</small>
-                    </div>
-                </div>
-                <strong data-estimated-total>${formatCurrency(DELIVERY_FEE)}</strong>
-                <button class="floating-cart__submit" type="button" data-action="open-cart-review" aria-label="Abrir carrito">Abrir</button>
-            </div>
         </form>
     `;
 }
@@ -2317,7 +2290,6 @@ function renderClientOrderDetailPage(order) {
                 <p class="muted">${e(formatDateTime(order.created_at))} | Estado: ${e(statusLabel(order.status))}</p>
             </div>
             <div class="hero-actions">
-                <button class="button ghost" type="button" data-action="print-order" data-order-id="${order.id}">Imprimir / PDF</button>
                 <a class="button ghost" href="#/cliente/pedido/nuevo?${order.status === "pendiente" ? "edit" : "source"}=${order.id}">${order.status === "pendiente" ? "Editar solicitud" : "Repetir pedido"}</a>
                 <a class="button ghost" href="#/cliente/dashboard">Volver a pedidos</a>
             </div>
@@ -2758,7 +2730,7 @@ function renderSetupPanel(extraMessage = "") {
             ${extraMessage ? `<div class="error-box"><p>${e(extraMessage)}</p></div>` : ""}
             <div class="list-grid">
                 <p>1. Completa <code>docs/static/config.js</code> con tu <code>SUPABASE_ANON_KEY</code>.</p>
-                <p>2. Ejecuta <code>supabase/sql/009_github_pages_auth.sql</code>, <code>supabase/sql/011_admin_first_login_setup.sql</code>, <code>supabase/sql/012_catalog_units_other_request.sql</code>, <code>supabase/sql/013_client_registration_repair.sql</code>, <code>supabase/sql/014_product_classification_presentation.sql</code> y <code>supabase/sql/015_product_images_and_order_edit.sql</code> en el SQL Editor.</p>
+                <p>2. Ejecuta <code>supabase/sql/009_github_pages_auth.sql</code>, <code>supabase/sql/011_admin_first_login_setup.sql</code>, <code>supabase/sql/012_catalog_units_other_request.sql</code>, <code>supabase/sql/013_client_registration_repair.sql</code>, <code>supabase/sql/014_product_classification_presentation.sql</code>, <code>supabase/sql/015_product_images_and_order_edit.sql</code> y <code>supabase/sql/016_admin_email_allowlist.sql</code> en el SQL Editor.</p>
                 <p>3. Crea las administradoras en Supabase Auth con la clave temporal acordada.</p>
                 <p>4. Publica la carpeta <code>docs/</code> desde GitHub Pages.</p>
             </div>
@@ -2776,7 +2748,7 @@ function renderErrorView(error) {
                 <p>${e(friendlyError(error))}</p>
             </div>
             <div class="list-grid">
-                <p>Archivos clave: <code>supabase/sql/009_github_pages_auth.sql</code>, <code>supabase/sql/011_admin_first_login_setup.sql</code>, <code>supabase/sql/012_catalog_units_other_request.sql</code>, <code>supabase/sql/013_client_registration_repair.sql</code>, <code>supabase/sql/014_product_classification_presentation.sql</code> y <code>supabase/sql/015_product_images_and_order_edit.sql</code></p>
+                <p>Archivos clave: <code>supabase/sql/009_github_pages_auth.sql</code>, <code>supabase/sql/011_admin_first_login_setup.sql</code>, <code>supabase/sql/012_catalog_units_other_request.sql</code>, <code>supabase/sql/013_client_registration_repair.sql</code>, <code>supabase/sql/014_product_classification_presentation.sql</code>, <code>supabase/sql/015_product_images_and_order_edit.sql</code> y <code>supabase/sql/016_admin_email_allowlist.sql</code></p>
                 <p>Config pública: <code>docs/static/config.js</code></p>
                 <p>Publicación: GitHub Pages apuntando a la carpeta <code>docs/</code></p>
             </div>
@@ -2870,6 +2842,7 @@ function filterOrderRows() {
 }
 
 function buildClientDashboard(orders) {
+    const latestOrder = orders[0] || null;
     const monthlyTotal = orders.reduce((sum, order) => sum + order.display_total, 0);
     const orderCount = orders.length;
     const averageTicket = orderCount ? Math.round(monthlyTotal / orderCount) : 0;
@@ -2897,6 +2870,7 @@ function buildClientDashboard(orders) {
             average_ticket: averageTicket,
         },
         weeks: [...grouped.values()],
+        latest_order: latestOrder,
     };
 }
 
@@ -3296,6 +3270,14 @@ function validMonth(value) {
 
 function normalizeEmail(value) {
     return String(value || "").trim().toLowerCase();
+}
+
+function isAdminAccessEmail(value) {
+    return ADMIN_ACCESS_EMAILS.has(normalizeEmail(value));
+}
+
+function canShowAdminAccess() {
+    return Boolean(state.profiles.admin && isAdminAccessEmail(state.session?.user?.email || state.profiles.admin.email));
 }
 
 function firstWord(value) {

@@ -3458,3 +3458,113 @@ body {
         font-size: 0.68rem;
     }
 }
+
+/* Client flow cleanup 2026-07-30 */
+nav.mobile-bottom-nav.client-top-nav {
+    position: sticky;
+    top: 0.45rem;
+    bottom: auto;
+    left: auto;
+    transform: none;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    width: min(calc(100% - 1rem), 430px);
+    margin: 0.45rem auto 0.7rem;
+}
+
+nav.mobile-bottom-nav.client-top-nav.has-admin {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.client-app-header {
+    grid-template-columns: minmax(0, 1fr) 54px;
+    min-height: 80px;
+    padding: 0 0.15rem;
+}
+
+.client-app-logo {
+    justify-self: start;
+    width: 128px;
+    height: 76px;
+    object-fit: contain;
+}
+
+.app-back-button {
+    display: none !important;
+}
+
+.app-cart-button {
+    justify-self: end;
+}
+
+.catalog-toolbar {
+    grid-template-columns: minmax(0, 1fr);
+}
+
+.catalog-sort-button,
+.catalog-week-banner,
+.floating-cart {
+    display: none !important;
+}
+
+.catalog-app {
+    padding-bottom: 1.4rem;
+}
+
+.catalog-primary-action {
+    display: flex;
+    justify-content: stretch;
+}
+
+.catalog-primary-action .button {
+    width: 100%;
+}
+
+.nav-icon-admin::before {
+    content: '';
+    position: absolute;
+    left: 5px;
+    right: 5px;
+    bottom: 3px;
+    height: 15px;
+    border: 2px solid currentColor;
+    border-radius: 4px;
+}
+
+.nav-icon-admin::after {
+    content: '';
+    position: absolute;
+    left: 8px;
+    top: 3px;
+    width: 8px;
+    height: 8px;
+    border: 2px solid currentColor;
+    border-bottom: 0;
+    border-radius: 8px 8px 0 0;
+}
+
+.client-history-panel .order-card {
+    display: grid;
+    gap: 0.75rem;
+}
+
+.client-history-panel .order-card .order-total {
+    margin: 0;
+}
+
+@media (max-width: 720px) {
+    nav.mobile-bottom-nav.client-top-nav {
+        top: 0.3rem;
+        width: min(calc(100% - 0.55rem), 420px);
+        margin: 0.3rem auto 0.55rem;
+    }
+
+    .client-app-header {
+        grid-template-columns: minmax(0, 1fr) 48px;
+        min-height: 72px;
+    }
+
+    .client-app-logo {
+        width: 112px;
+        height: 68px;
+    }
+}

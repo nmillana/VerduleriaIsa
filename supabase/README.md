@@ -20,6 +20,7 @@ Esta carpeta deja preparado el backend de datos para que la app use Supabase en 
 - `sql/013_client_registration_repair.sql`: repara registro de clientas con Supabase Auth + RLS.
 - `sql/014_product_classification_presentation.sql`: limpia categorias visibles y presentaciones.
 - `sql/015_product_images_and_order_edit.sql`: agrega fotos reales editables y permite editar pedidos pendientes.
+- `sql/016_admin_email_allowlist.sql`: permite administración solo a `isabelsoledadster@gmail.com` y `nataliamillanassler@gmail.com`.
 - `.env.example`: variables necesarias para que la app apunte a Supabase.
 
 ## Como configurarlo en tu Supabase
@@ -64,6 +65,7 @@ Para activarla:
 6. Ejecuta `sql/013_client_registration_repair.sql`
 7. Ejecuta `sql/014_product_classification_presentation.sql`
 8. Ejecuta `sql/015_product_images_and_order_edit.sql`
+9. Ejecuta `sql/016_admin_email_allowlist.sql`
 
 En el SQL Editor copia y pega el contenido completo del archivo `.sql`; no pegues solo la ruta del archivo.
 
