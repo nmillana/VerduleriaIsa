@@ -1121,6 +1121,9 @@ async function handleSubmit(event) {
             case "admin-product-update":
                 await submitProductSave(form);
                 break;
+            case "admin-products-bulk-update":
+                await submitProductsBulkSave(form);
+                break;
             case "admin-order-update":
                 await submitAdminOrderUpdate(form);
                 break;
@@ -1489,19 +1492,35 @@ async function submitClientOrder(form) {
 }
 
 async function submitProductSave(form) {
-    const formData = new FormData(form);
-    await saveProduct({
-        id: Number(formData.get("product_id") || 0) || null,
-        name: formData.get("name"),
-        display_name: formData.get("display_name"),
-        presentation: formData.get("presentation"),
-        category: formData.get("category"),
-        estimated_price: formData.get("estimated_price"),
-        image_url: formData.get("image_url"),
-        is_active: formData.get("is_active") === "1",
-    });
+    await saveProduct(readProductFormValues(form));
     state.flash = { tone: "notice", message: "Producto guardado." };
     await renderCurrentRoute();
+}
+
+async function submitProductsBulkSave(form) {
+    const rows = Array.from(form.querySelectorAll("[data-product-row]"));
+    if (!rows.length) {
+        return;
+    }
+    for (const row of rows) {
+        await saveProduct(readProductFormValues(row));
+    }
+    state.flash = { tone: "notice", message: `${rows.length} productos guardados.` };
+    await renderCurrentRoute();
+}
+
+function readProductFormValues(container) {
+    const value = (name) => container.querySelector(`[name="${name}"]`)?.value || "";
+    return {
+        id: Number(value("product_id") || 0) || null,
+        name: value("name"),
+        display_name: value("display_name"),
+        presentation: value("presentation"),
+        category: value("category"),
+        estimated_price: value("estimated_price"),
+        image_url: value("image_url"),
+        is_active: value("is_active") === "1",
+    };
 }
 
 async function switchRole(role) {
@@ -1629,9 +1648,8 @@ function renderShell(title, content) {
         state.role ? `role-${state.role}` : "public-shell",
     ].filter(Boolean).join(" ");
 
-    appRoot.innerHTML = `
-        <div class="${shellClass}">
-            <header class="topbar">
+    const isAdminShell = state.role === "admin";
+    const brandMarkup = isAdminShell ? "" : `
                 <a class="brand" href="#/">
                     <span class="brand-mark">
                         <img class="brand-logo" src="./static/logo-verduleria-isa.png" alt="${e(APP_NAME)}">
@@ -1641,6 +1659,12 @@ function renderShell(title, content) {
                         <span class="brand-tagline">Tu feria personal</span>
                     </span>
                 </a>
+    `;
+
+    appRoot.innerHTML = `
+        <div class="${shellClass}">
+            <header class="topbar ${isAdminShell ? "admin-topbar-clean" : ""}">
+                ${brandMarkup}
                 <nav class="nav-links">
                     ${renderNavigation()}
                 </nav>
@@ -2131,10 +2155,17 @@ function renderClientBottomNav(active = "inicio") {
         : "";
     return `
         <nav class="mobile-bottom-nav client-top-nav ${adminItem ? "has-admin" : ""}" aria-label="Navegación clienta">
-            ${item("inicio", "#/cliente/pedido/nuevo", "Inicio", "nav-icon-home")}
-            ${item("pedidos", "#/cliente/dashboard", "Pedidos", "nav-icon-bag")}
-            ${item("perfil", "#/cliente/perfil", "Perfil", "nav-icon-user")}
-            ${adminItem}
+            <img class="client-nav-logo" src="./static/logo-verduleria-isa.png" alt="${e(APP_NAME)}">
+            <div class="client-nav-links">
+                ${item("inicio", "#/cliente/pedido/nuevo", "Inicio", "nav-icon-home")}
+                ${item("pedidos", "#/cliente/dashboard", "Pedidos", "nav-icon-bag")}
+                ${item("perfil", "#/cliente/perfil", "Perfil", "nav-icon-user")}
+                ${adminItem}
+            </div>
+            <button class="app-cart-button client-nav-cart" type="button" data-action="open-cart-review" aria-label="Ver carrito">
+                <span class="app-cart-icon" aria-hidden="true"></span>
+                <span data-selected-count>0</span>
+            </button>
         </nav>
     `;
 }
@@ -2171,7 +2202,6 @@ function renderClientOrderFormPage(products, draft, sourceOrder, editOrder, late
         <form class="catalog-app mobile-shop-order" data-form="client-order-create" data-order-form data-delivery-fee="${DELIVERY_FEE}">
             <input type="hidden" name="source_order_id" value="${sourceOrderId}">
             <input type="hidden" name="edit_order_id" value="${editOrderId}">
-            ${renderClientAppHeader("Catálogo")}
 
             <section class="catalog-title-row">
                 <h1>Catálogo</h1>
@@ -2247,7 +2277,6 @@ function renderClientCartReviewPage(products, draft) {
         <form class="catalog-app cart-review-page mobile-shop-order" data-form="client-order-create" data-order-form data-delivery-fee="${DELIVERY_FEE}">
             <input type="hidden" name="source_order_id" value="${e(draft.source_order_id || "")}">
             <input type="hidden" name="edit_order_id" value="${e(draft.edit_order_id || "")}">
-            ${renderClientAppHeader("Carrito")}
 
             <section class="catalog-title-row cart-title-row">
                 <h1>Detalle de solicitud</h1>
@@ -2544,6 +2573,31 @@ function renderAdminOrderDetailPage(order) {
     `;
 }
 
+function renderAdminOrderItemEditRows(items = []) {
+    if (!items.length) {
+        return `<tr><td colspan="6">Sin productos.</td></tr>`;
+    }
+
+    return items.map((item) => {
+        const actualPrice = item.actual_price === null || item.actual_price === undefined ? "" : item.actual_price;
+        return `
+            <tr data-item-row data-item-id="${item.id}" data-quantity="${e(item.quantity)}">
+                <td>${e(item.product_name)}</td>
+                <td>${e(formatOrderItemQuantity(item))}</td>
+                <td>${formatCurrency(item.estimated_price)}</td>
+                <td><input type="number" min="0" name="actual_${item.id}" value="${e(actualPrice)}" placeholder="${item.estimated_price}"></td>
+                <td>
+                    <select name="missing_${item.id}">
+                        <option value="0" ${item.was_missing ? "" : "selected"}>No</option>
+                        <option value="1" ${item.was_missing ? "selected" : ""}>Sí</option>
+                    </select>
+                </td>
+                <td><input type="text" name="note_${item.id}" value="${e(item.item_note || "")}" placeholder="Nota"></td>
+            </tr>
+        `;
+    }).join("");
+}
+
 function renderAdminProductsPage(products) {
     return `
         <section class="section-head">
@@ -2586,28 +2640,37 @@ function renderAdminProductsPage(products) {
         </section>
 
         <section class="panel">
-            <h2>Editar productos actuales</h2>
-            <div class="table-stack">
-                ${products.map((product) => `
-                    <form class="table-form-row product-admin-row" data-form="admin-product-update">
-                        <input type="hidden" name="product_id" value="${product.id}">
-                        <input type="hidden" name="name" value="${e(product.name)}">
-                        ${renderProductThumb(product, "product-thumb small")}
-                        <input type="text" name="display_name" value="${e(productDisplayName(product))}" title="Nombre interno: ${e(product.name)}" required>
-                        <input type="text" name="presentation" value="${e(product.presentation)}" placeholder="1 kg">
-                        <select name="category">
-                            ${CATEGORY_CHOICES.map(([value, label]) => `<option value="${e(value)}" ${product.category === value ? "selected" : ""}>${e(label)}</option>`).join("")}
-                        </select>
-                        <input type="number" name="estimated_price" min="0" value="${product.estimated_price}" required>
-                        <input type="url" name="image_url" value="${e(product.image_url)}" placeholder="URL imagen">
-                        <select name="is_active">
-                            <option value="1" ${product.is_active ? "selected" : ""}>Activo</option>
-                            <option value="0" ${product.is_active ? "" : "selected"}>Inactivo</option>
-                        </select>
-                        <button class="button ghost" type="submit">Guardar</button>
-                    </form>
-                `).join("")}
-            </div>
+            <form class="stacked-form products-bulk-form" data-form="admin-products-bulk-update">
+                <div class="section-head compact-section-head">
+                    <div>
+                        <h2>Editar productos actuales</h2>
+                        <p class="muted">Puedes cambiar precios, estado e imágenes y guardar todo al final.</p>
+                    </div>
+                    <button class="button primary" type="submit" data-busy-text="Guardando...">Guardar todos los cambios</button>
+                </div>
+                <div class="table-stack">
+                    ${products.map((product) => `
+                        <div class="table-form-row product-admin-row" data-product-row>
+                            <input type="hidden" name="product_id" value="${product.id}">
+                            <input type="hidden" name="name" value="${e(product.name)}">
+                            ${renderProductThumb(product, "product-thumb small")}
+                            <input type="text" name="display_name" value="${e(productDisplayName(product))}" title="Nombre interno: ${e(product.name)}" required>
+                            <input type="text" name="presentation" value="${e(product.presentation)}" placeholder="1 kg">
+                            <select name="category">
+                                ${CATEGORY_CHOICES.map(([value, label]) => `<option value="${e(value)}" ${product.category === value ? "selected" : ""}>${e(label)}</option>`).join("")}
+                            </select>
+                            <input type="number" name="estimated_price" min="0" value="${product.estimated_price}" required>
+                            <input type="url" name="image_url" value="${e(product.image_url)}" placeholder="URL imagen">
+                            <select name="is_active">
+                                <option value="1" ${product.is_active ? "selected" : ""}>Activo</option>
+                                <option value="0" ${product.is_active ? "" : "selected"}>Inactivo</option>
+                            </select>
+                        </div>
+                    `).join("")}
+                </div>
+                <p class="field-note" data-inline-status>Los cambios se guardan juntos en Supabase.</p>
+                <button class="button primary" type="submit" data-busy-text="Guardando...">Guardar todos los cambios</button>
+            </form>
         </section>
     `;
 }
@@ -2765,7 +2828,10 @@ function refreshOrderSummary() {
     const inputs = Array.from(form.querySelectorAll("[data-quantity-input]"));
     const totalNodes = Array.from(form.querySelectorAll("[data-estimated-total]"));
     const subtotalNodes = Array.from(form.querySelectorAll("[data-subtotal-estimated]"));
-    const countNodes = Array.from(form.querySelectorAll("[data-selected-count]"));
+    const countNodes = Array.from(new Set([
+        ...form.querySelectorAll("[data-selected-count]"),
+        ...document.querySelectorAll(".client-top-nav [data-selected-count]"),
+    ]));
     const deliveryFee = Number(form.dataset.deliveryFee || DELIVERY_FEE);
 
     let subtotal = 0;

@@ -3568,3 +3568,160 @@ nav.mobile-bottom-nav.client-top-nav.has-admin {
         height: 68px;
     }
 }
+
+
+/* Admin bulk edit and client header cleanup 2026-07-30 */
+.admin-topbar-clean {
+    justify-content: flex-end;
+    min-height: auto;
+}
+
+.admin-topbar-clean .nav-links {
+    margin-left: auto;
+}
+
+.products-bulk-form {
+    display: grid;
+    gap: 1rem;
+}
+
+.products-bulk-form .compact-section-head {
+    margin: 0;
+    padding: 0;
+    align-items: center;
+}
+
+.products-bulk-form > .button.primary {
+    justify-self: end;
+}
+
+.product-admin-row {
+    grid-template-columns: 56px minmax(150px, 1.25fr) minmax(110px, 0.8fr) minmax(150px, 1fr) 112px minmax(180px, 1.1fr) 108px;
+}
+
+.product-admin-row input[name="image_url"] {
+    min-width: 180px;
+}
+
+nav.mobile-bottom-nav.client-top-nav {
+    position: sticky;
+    top: 0.45rem;
+    bottom: auto;
+    left: auto;
+    transform: none;
+    display: grid;
+    grid-template-columns: 70px minmax(0, 1fr) 48px;
+    align-items: center;
+    gap: 0.3rem;
+    width: min(calc(100% - 1rem), 430px);
+    min-height: 74px;
+    margin: 0.45rem auto 0.7rem;
+    padding: 0.35rem 0.45rem;
+}
+
+nav.mobile-bottom-nav.client-top-nav.has-admin {
+    grid-template-columns: 70px minmax(0, 1fr) 48px;
+}
+
+.client-nav-logo {
+    justify-self: start;
+    width: 64px;
+    height: 58px;
+    object-fit: contain;
+}
+
+.client-nav-links {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    align-items: center;
+    gap: 0.05rem;
+    min-width: 0;
+}
+
+.client-top-nav.has-admin .client-nav-links {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.client-top-nav .client-nav-links a,
+.client-top-nav .client-nav-links button {
+    min-width: 0;
+    min-height: 42px;
+    padding: 0.08rem 0.1rem;
+    font-size: 0.68rem;
+}
+
+.client-top-nav .client-nav-links a > span:last-child,
+.client-top-nav .client-nav-links button > span:last-child {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 0.68rem;
+}
+
+.client-top-nav .client-nav-cart {
+    justify-self: end;
+    width: 44px;
+    height: 44px;
+    min-height: 44px;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    grid-template-rows: none;
+}
+
+.client-top-nav .client-nav-cart > span:last-child {
+    font-size: 0.72rem;
+    line-height: 1;
+}
+
+.client-app-header {
+    display: none;
+}
+
+@media (max-width: 960px) {
+    .products-bulk-form .compact-section-head {
+        display: grid;
+        gap: 0.75rem;
+    }
+
+    .products-bulk-form .compact-section-head .button,
+    .products-bulk-form > .button.primary {
+        width: 100%;
+        justify-self: stretch;
+    }
+}
+
+@media (max-width: 720px) {
+    nav.mobile-bottom-nav.client-top-nav,
+    nav.mobile-bottom-nav.client-top-nav.has-admin {
+        top: 0.3rem;
+        grid-template-columns: 64px minmax(0, 1fr) 44px;
+        width: min(calc(100% - 0.55rem), 420px);
+        min-height: 66px;
+        margin: 0.3rem auto 0.55rem;
+        padding: 0.28rem 0.35rem;
+    }
+
+    .client-nav-logo {
+        width: 58px;
+        height: 52px;
+    }
+
+    .client-top-nav .client-nav-links a,
+    .client-top-nav .client-nav-links button {
+        min-height: 38px;
+        font-size: 0.62rem;
+    }
+
+    .client-top-nav .client-nav-links a > span:last-child,
+    .client-top-nav .client-nav-links button > span:last-child {
+        font-size: 0.62rem;
+    }
+
+    .client-top-nav .client-nav-cart {
+        width: 40px;
+        height: 40px;
+        min-height: 40px;
+    }
+}
