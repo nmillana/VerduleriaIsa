@@ -276,21 +276,21 @@ async function resolveRoute(route) {
             return redirectView(target, "", "notice", "Abriendo panel administrador...");
         }
         if (state.role === "client") {
-            return redirectView("/cliente/dashboard", "", "notice", "Abriendo tu panel...");
+            return redirectView("/cliente/pedido/nuevo", "", "notice", "Abriendo catálogo...");
         }
         return { title: "Acceso", content: renderHomePage() };
     }
 
     if (route.path === "/registro") {
         if (state.role === "client") {
-            return redirectView("/cliente/dashboard", "", "notice", "Abriendo tu panel...");
+            return redirectView("/cliente/pedido/nuevo", "", "notice", "Abriendo catálogo...");
         }
         return { title: "Registro", content: renderClientRegisterPage() };
     }
 
     if (route.path === "/login-cliente") {
         if (state.role === "client") {
-            return redirectView("/cliente/dashboard", "", "notice", "Abriendo tu panel...");
+            return redirectView("/cliente/pedido/nuevo", "", "notice", "Abriendo catálogo...");
         }
         return { title: "Ingreso clienta", content: renderClientLoginPage() };
     }
@@ -1169,7 +1169,7 @@ async function submitClientRegister(form) {
         setActiveProfile("client", client);
         await touchClientLogin(client.id);
         state.flash = { tone: "notice", message: "Perfil de clienta creado. Ya puedes hacer tu pedido." };
-        navigate("/cliente/dashboard", true);
+        navigate("/cliente/pedido/nuevo", true);
         return;
     }
 
@@ -1204,7 +1204,7 @@ async function submitClientRegister(form) {
             throw new Error("Tu cuenta se creó, pero no pude crear la ficha de clienta. Ejecuta supabase/sql/013_client_registration_repair.sql en Supabase y vuelve a ingresar.");
         }
         state.flash = { tone: "notice", message: "Registro completado. Ya puedes hacer tu pedido." };
-        navigate("/cliente/dashboard", true);
+        navigate("/cliente/pedido/nuevo", true);
         return;
     }
 
@@ -1221,7 +1221,7 @@ async function submitClientRegister(form) {
             setActiveProfile("client", client);
             await touchClientLogin(client.id);
             state.flash = { tone: "notice", message: "Perfil de clienta creado. Ya puedes hacer tu pedido." };
-            navigate("/cliente/dashboard", true);
+            navigate("/cliente/pedido/nuevo", true);
             return;
         }
     }
@@ -1259,7 +1259,7 @@ async function submitClientLogin(form) {
     }
 
     state.flash = { tone: "notice", message: "Bienvenida de vuelta." };
-    navigate("/cliente/dashboard", true);
+    navigate("/cliente/pedido/nuevo", true);
 }
 
 async function submitAdminLogin(form) {
@@ -1509,8 +1509,14 @@ function renderShell(title, content) {
     const flash = state.flash;
     state.flash = null;
 
+    const shellClass = [
+        "page-shell",
+        state.role === "client" ? "client-shell" : "",
+        state.role ? `role-${state.role}` : "public-shell",
+    ].filter(Boolean).join(" ");
+
     appRoot.innerHTML = `
-        <div class="page-shell">
+        <div class="${shellClass}">
             <header class="topbar">
                 <a class="brand" href="#/">
                     <span class="brand-mark">
@@ -1529,6 +1535,7 @@ function renderShell(title, content) {
                 ${flash ? renderFlash(flash) : ""}
                 ${content}
             </main>
+            ${state.role === "client" ? renderClientBottomNav(clientBottomNavActive()) : ""}
         </div>
     `;
 }
@@ -1577,10 +1584,25 @@ function renderNavigation() {
     }
 
     return [
-        `<a href="#/login-cliente">Ingreso clienta</a>`,
-        `<a href="#/registro">Registro</a>`,
-        `<a href="#/admin/login">Administrador</a>`,
+        `<button type="button" data-action="focus-category" data-target="landing-how">¿Cómo funciona?</button>`,
+        `<button type="button" data-action="focus-category" data-target="landing-catalog">Catálogo</button>`,
+        `<button type="button" data-action="focus-category" data-target="landing-about">Sobre nosotros</button>`,
+        `<a class="nav-login-button" href="#/login-cliente">Ingresar</a>`,
     ].join("");
+}
+
+function clientBottomNavActive() {
+    const path = state.route?.path || "";
+    if (path.includes("perfil")) {
+        return "perfil";
+    }
+    if (path.includes("pedido/nuevo")) {
+        return "categorias";
+    }
+    if (path.includes("pedido/")) {
+        return "pedidos";
+    }
+    return "inicio";
 }
 
 function renderFlash(flash) {
@@ -1590,29 +1612,42 @@ function renderFlash(flash) {
 
 function renderHomePage() {
     return `
-        <section class="access-landing client-app-surface">
-            <div class="access-card auth-card">
-                <div class="access-card__logo-wrap">
-                    <img class="access-card__logo" src="./static/logo-verduleria-isa.png" alt="${e(APP_NAME)}">
+        <section class="landing-page">
+            <section class="landing-hero">
+                <figure class="landing-hero__image" aria-hidden="true">
+                    <img src="${e(PROMO_IMAGE_URL)}" alt="Canasta con verduras frescas">
+                </figure>
+                <article class="landing-hero__card">
+                    <img class="landing-logo" src="./static/logo-verduleria-isa.png" alt="${e(APP_NAME)}">
+                    <p class="eyebrow">Tu feria personal</p>
+                    <h1>Frescura directo a tu casa.</h1>
+                    <p class="lead">Ingresa para armar tu pedido semanal de frutas, verduras y productos seleccionados.</p>
+                    <div class="landing-actions">
+                        <a class="button primary" href="#/login-cliente">Ingresar</a>
+                        <button class="button ghost" type="button" data-action="focus-category" data-target="landing-catalog">Ver catálogo</button>
+                    </div>
+                    <p class="landing-proof">Productos frescos y seleccionados cada semana</p>
+                </article>
+            </section>
+
+            <section class="landing-band" id="landing-how">
+                <h2>¿Cómo funciona?</h2>
+                <p>Entras, eliges tus productos por unidad o kg y envías tu pedido semanal para revisión.</p>
+            </section>
+
+            <section class="landing-band" id="landing-catalog">
+                <h2>Catálogo seleccionado</h2>
+                <div class="landing-preview-grid">
+                    <article><span>Frutas</span><strong>Manzanas, plátanos, naranjas</strong></article>
+                    <article><span>Verduras</span><strong>Tomates, zanahorias, brócoli</strong></article>
+                    <article><span>Listos</span><strong>Bolsa de cazuela, chapsui</strong></article>
                 </div>
-                <p class="eyebrow">Tu feria personal</p>
-                <h1>Frescura directo a tu casa.</h1>
-                <p class="lead">Ingresa para armar tu pedido semanal de frutas, verduras y productos seleccionados.</p>
-                <form class="stacked-form access-form" data-form="client-login">
-                    <label>Correo
-                        <input type="email" name="email" autocomplete="email" placeholder="clienta@correo.cl" required>
-                    </label>
-                    <label>Contraseña
-                        <input type="password" name="password" autocomplete="current-password" placeholder="Tu contraseña" required>
-                    </label>
-                    <p class="field-note" data-inline-status>Proyecto Supabase: ${e(currentSupabaseProjectLabel())}</p>
-                    <button class="button primary full-width" type="submit" data-busy-text="Ingresando...">Ingresar</button>
-                </form>
-                <div class="access-links">
-                    <a class="button ghost full-width" href="#/registro">Crear mi usuario</a>
-                    <a class="button ghost full-width admin-access" href="#/admin/login">Administrador</a>
-                </div>
-            </div>
+            </section>
+
+            <section class="landing-band" id="landing-about">
+                <h2>Verduleria Isa</h2>
+                <p>Tu feria personal para pedir productos frescos de forma simple desde el celular.</p>
+            </section>
         </section>
     `;
 }
@@ -1758,15 +1793,10 @@ function renderClientDashboardPage(client, dashboard, month, products = [], draf
                     <h1>Hola, ${e(firstName)}.</h1>
                     <p>¿Qué frutas y verduras frescas vas a pedir hoy?</p>
                 </div>
-                <button class="notification-button" type="button" data-action="focus-category" data-target="featured-products" aria-label="Ver productos destacados">
-                    <span class="notification-bell" aria-hidden="true"></span>
-                    ${dashboard.summary.order_count ? `<span class="notification-badge">${dashboard.summary.order_count}</span>` : ""}
-                </button>
             </section>
 
             <div class="shop-searchbar mobile-searchbar">
                 <input type="search" data-product-search placeholder="Buscar frutas, verduras y más..." aria-label="Buscar producto">
-                <button class="filter-button" type="button" data-action="focus-category" data-target="featured-products" aria-label="Ver productos"></button>
             </div>
 
             <nav class="category-tabs mobile-category-tabs" aria-label="Categorías principales">
@@ -1823,7 +1853,6 @@ function renderClientDashboardPage(client, dashboard, month, products = [], draf
                 </div>
             </form>
 
-            ${renderClientBottomNav()}
         </section>
 
         <section class="client-month-panel" id="client-orders">
@@ -2004,6 +2033,31 @@ function productImageSlug(value) {
 }
 
 
+
+function renderClientAppHeader(title = "Catálogo") {
+    return `
+        <header class="client-app-header">
+            <a class="app-back-button" href="#/cliente/dashboard" aria-label="Volver al panel"></a>
+            <img class="client-app-logo" src="./static/logo-verduleria-isa.png" alt="${e(APP_NAME)}">
+            <button class="app-cart-button" type="button" data-action="focus-category" data-target="client-order-notes" aria-label="Ver carrito">
+                <span class="app-cart-icon" aria-hidden="true"></span>
+                <span data-selected-count>0</span>
+            </button>
+        </header>
+    `;
+}
+
+function renderCatalogSupportChips() {
+    return `
+        <div class="catalog-support-chips" aria-label="Filtros rápidos">
+            <button type="button">Temporada</button>
+            <button type="button">A granel</button>
+            <button type="button">Listos para cocinar</button>
+            <button type="button">Oferta</button>
+        </div>
+    `;
+}
+
 function selectFeaturedProducts(products) {
     const preferred = [
         /manzana/,
@@ -2089,14 +2143,22 @@ function renderClientProductCard(product, selection = {}, options = {}) {
     `;
 }
 
-function renderClientBottomNav() {
+function renderClientBottomNav(active = "inicio") {
+    const item = (key, href, label, iconClass, disabled = false) => {
+        const activeClass = active === key ? " active" : "";
+        const icon = `<span class="nav-icon ${iconClass}" aria-hidden="true"></span>`;
+        if (disabled) {
+            return `<button class="${activeClass.trim()}" type="button" disabled>${icon}<span>${label}</span></button>`;
+        }
+        return `<a class="${activeClass.trim()}" href="${href}">${icon}<span>${label}</span></a>`;
+    };
     return `
         <nav class="mobile-bottom-nav" aria-label="Navegación clienta">
-            <a class="active" href="#/cliente/dashboard"><span aria-hidden="true">&#8962;</span>Inicio</a>
-            <a href="#/cliente/pedido/nuevo"><span aria-hidden="true">&#9638;</span>Categorías</a>
-            <a href="#/cliente/dashboard"><span aria-hidden="true">&#9633;</span>Pedidos</a>
-            <button type="button" disabled><span aria-hidden="true">&#9825;</span>Favoritos</button>
-            <a href="#/cliente/perfil"><span aria-hidden="true">&#9675;</span>Perfil</a>
+            ${item("inicio", "#/cliente/dashboard", "Inicio", "nav-icon-home")}
+            ${item("categorias", "#/cliente/pedido/nuevo", "Categorías", "nav-icon-grid")}
+            ${item("pedidos", "#/cliente/dashboard", "Pedidos", "nav-icon-bag")}
+            ${item("favoritos", "#", "Favoritos", "nav-icon-heart", true)}
+            ${item("perfil", "#/cliente/perfil", "Perfil", "nav-icon-user")}
         </nav>
     `;
 }
@@ -2124,55 +2186,63 @@ function renderClientOrderFormPage(products, draft, sourceOrder) {
         .join("");
 
     return `
-        <section class="shop-head">
-            <div>
-                <p class="eyebrow">Pedido semanal</p>
-                <h1>Arma tu pedido</h1>
-                <p>Elige por unidad o por kg. El campo Otro queda disponible para productos fuera del listado.</p>
-            </div>
-            ${sourceOrder ? `<div class="badge-block">Basado en el pedido #${sourceOrder.id} del ${e(formatDateTime(sourceOrder.created_at))}</div>` : ""}
-        </section>
-        <div class="shop-searchbar">
-            <input type="search" data-product-search placeholder="Buscar frutas, verduras y más..." aria-label="Buscar producto">
-        </div>
-        <nav class="category-tabs" aria-label="Categorías del catálogo">
-            ${CATEGORY_CHOICES.map(([value, label]) => `<button class="category-chip" type="button" data-action="focus-category" data-target="cat-${e(productImageSlug(value))}" data-category-nav="${e(value)}">${e(label)}</button>`).join("")}
-        </nav>
-        <form class="order-layout" data-form="client-order-create" data-order-form data-delivery-fee="${DELIVERY_FEE}">
+        <form class="catalog-app mobile-shop-order" data-form="client-order-create" data-order-form data-delivery-fee="${DELIVERY_FEE}">
             <input type="hidden" name="source_order_id" value="${sourceOrder?.id || ""}">
-            <aside class="panel summary-panel">
-                <h2>Carrito</h2>
-                <div class="summary-stats">
-                    <div>
-                        <span class="muted">Productos elegidos</span>
-                        <strong data-selected-count>0</strong>
-                    </div>
-                    <div>
-                        <span class="muted">Subtotal productos</span>
-                        <strong data-subtotal-estimated>${formatCurrency(0)}</strong>
-                    </div>
-                    <div>
-                        <span class="muted">Despacho fijo</span>
-                        <strong>${formatCurrency(DELIVERY_FEE)}</strong>
-                    </div>
-                    <div>
-                        <span class="muted">Total estimado</span>
-                        <strong data-estimated-total>${formatCurrency(DELIVERY_FEE)}</strong>
-                    </div>
+            ${renderClientAppHeader("Catálogo")}
+
+            <section class="catalog-title-row">
+                <h1>Catálogo</h1>
+                ${sourceOrder ? `<div class="badge-block">Basado en el pedido #${sourceOrder.id}</div>` : ""}
+            </section>
+
+            <section class="catalog-toolbar">
+                <div class="shop-searchbar catalog-search">
+                    <input type="search" data-product-search placeholder="Buscar frutas, verduras y más..." aria-label="Buscar producto">
                 </div>
+                <button class="catalog-filter-button" type="button">Filtros</button>
+                <button class="catalog-sort-button" type="button">Más pedidos</button>
+            </section>
+
+            <nav class="category-tabs catalog-category-tabs" aria-label="Categorías del catálogo">
+                ${CATEGORY_CHOICES.map(([value, label]) => `<button class="category-chip" type="button" data-action="focus-category" data-target="cat-${e(productImageSlug(value))}" data-category-nav="${e(value)}">${e(label)}</button>`).join("")}
+            </nav>
+
+            ${renderCatalogSupportChips()}
+
+            <section class="catalog-week-banner">
+                <span aria-hidden="true"></span>
+                <strong>Verduras frescas seleccionadas para esta semana</strong>
+                <img src="${e(PROMO_IMAGE_URL)}" alt="Canasta con verduras frescas">
+            </section>
+
+            <section class="product-columns catalog-products" id="catalog-products">
+                <p class="empty-search" data-product-search-empty hidden>No hay productos con esa búsqueda.</p>
+                ${groupsMarkup || `<section class="empty-state"><p class="eyebrow">Catálogo</p><h2>Sin productos activos</h2><p class="muted">Puedes usar el campo Otro mientras la administradora actualiza el catálogo.</p></section>`}
+            </section>
+
+            <details class="home-notes-card catalog-notes-card" id="client-order-notes">
+                <summary>Otro producto u observaciones</summary>
                 <label>Otro
                     <textarea name="other_request" rows="3" maxlength="${MAX_OTHER_REQUEST_LENGTH}" data-other-request placeholder="Pide aquí algo que no esté en el listado.">${e(otherRequest)}</textarea>
                 </label>
                 <label>Observaciones
                     <textarea name="client_note" rows="3" maxlength="${MAX_CLIENT_NOTE_LENGTH}" data-client-note>${e(clientNote)}</textarea>
                 </label>
-                <p class="field-note" data-inline-status>Carrito guardado en este dispositivo. El campo Otro se revisa manualmente y no suma precio estimado.</p>
-                <button class="button primary full-width" type="submit" data-busy-text="Enviando...">Enviar pedido</button>
-            </aside>
-            <section class="product-columns">
-                <p class="empty-search" data-product-search-empty hidden>No hay productos con esa búsqueda.</p>
-                ${groupsMarkup || `<section class="empty-state"><p class="eyebrow">Catálogo</p><h2>Sin productos activos</h2><p class="muted">Puedes usar el campo Otro mientras la administradora actualiza el catálogo.</p></section>`}
-            </section>
+            </details>
+
+            <p class="field-note mobile-order-status" data-inline-status>Carrito guardado en este dispositivo. El campo Otro se revisa manualmente y no suma precio estimado.</p>
+
+            <div class="floating-cart" data-floating-cart hidden>
+                <div class="floating-cart__summary">
+                    <span data-selected-count>0</span>
+                    <div>
+                        <strong>Ver carrito</strong>
+                        <small><span data-subtotal-estimated>${formatCurrency(0)}</span> en productos</small>
+                    </div>
+                </div>
+                <strong data-estimated-total>${formatCurrency(DELIVERY_FEE)}</strong>
+                <button class="floating-cart__submit" type="submit" data-busy-text="Enviando..." aria-label="Enviar pedido">Enviar</button>
+            </div>
         </form>
     `;
 }
