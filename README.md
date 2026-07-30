@@ -78,11 +78,14 @@ Esta version ya no depende del backend Flask y usa:
 - `RLS` para permisos por usuario
 - `docs/index.html` como SPA estatica
 - `docs/static/config.js` para `SUPABASE_URL` y `SUPABASE_ANON_KEY`
-- `docs/static/product-images/` para las ilustraciones visuales del catálogo
+- `products.image_url` para fotos reales editables, con respaldo publico automatico cuando no hay imagen cargada
 - `supabase/sql/009_github_pages_auth.sql` para enlazar `auth.users` con `clients` y `admins`
 - `supabase/sql/010_secure_order_creation.sql` para crear pedidos con una RPC transaccional y totales calculados en Supabase
 - `supabase/sql/011_admin_first_login_setup.sql` para preparar administradoras y obligar cambio de clave temporal
 - `supabase/sql/012_catalog_units_other_request.sql` para actualizar el catalogo desde `Lista de frutas y verduras 01-08-2026.xlsx`, agregar unidad/kg y permitir el campo `Otro`
+- `supabase/sql/013_client_registration_repair.sql` para registrar clientas con Supabase Auth + RLS
+- `supabase/sql/014_product_classification_presentation.sql` para limpiar categorias y presentaciones
+- `supabase/sql/015_product_images_and_order_edit.sql` para fotos editables y edicion de pedidos pendientes
 
 Pasos:
 
@@ -91,7 +94,10 @@ Pasos:
 3. Crea en `Authentication > Users` los usuarios `isabelsoledadster@gmail.com` y `nataliamillanassler@gmail.com` con la clave temporal acordada
 4. Ejecuta `supabase/sql/011_admin_first_login_setup.sql` en Supabase
 5. Ejecuta `supabase/sql/012_catalog_units_other_request.sql` en Supabase
-6. Publica GitHub Pages apuntando a la carpeta `docs/`
+6. Ejecuta `supabase/sql/013_client_registration_repair.sql` en Supabase
+7. Ejecuta `supabase/sql/014_product_classification_presentation.sql` en Supabase
+8. Ejecuta `supabase/sql/015_product_images_and_order_edit.sql` en Supabase
+9. Publica GitHub Pages apuntando a la carpeta `docs/`
 
 En el SQL Editor debes abrir el archivo `.sql`, copiar todo su contenido y pegarlo en Supabase. No pegues solo la ruta como `supabase/sql/012_catalog_units_other_request.sql`, porque Supabase lo interpreta como SQL y devuelve error de sintaxis.
 

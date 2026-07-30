@@ -21,10 +21,11 @@ const ROLE_STORAGE_KEY = "verduleriaisa.role.v1";
 const MAX_CLIENT_NOTE_LENGTH = 500;
 const MAX_OTHER_REQUEST_LENGTH = 500;
 const MAX_QUANTITY = 999;
-const UNIT_CHOICES = [["unidad", "Unidad"], ["kg", "Kg"]];
+const PRODUCT_BASE_FIELDS = "id,name,display_name,presentation,category,estimated_price,is_active,created_at,updated_at";
+const PRODUCT_FIELDS_WITH_IMAGE = `${PRODUCT_BASE_FIELDS},image_url`;
+const UNIT_CHOICES = [["kg", "Kg"], ["unidad", "Unidad"]];
 const PRODUCT_PHOTO_BASE = 'https://www.themealdb.com/images/ingredients';
 const PRODUCT_PHOTO_VARIANT = '-medium';
-const PROMO_IMAGE_URL = 'https://images.unsplash.com/photo-1418669112725-fb499fb61127?auto=format&fit=crop&w=1200&q=80';
 const CATEGORY_PHOTO_TERMS = {
     frutas: 'Apples',
     verduras_hortalizas: 'Carrots',
@@ -261,7 +262,7 @@ async function renderCurrentRoute() {
 }
 
 function afterRender(route) {
-    if (route.path === "/cliente/pedido/nuevo" || route.path === "/cliente/dashboard") {
+    if (route.path === "/cliente/pedido/nuevo" || route.path === "/cliente/carrito") {
         refreshOrderSummary();
         filterOrderRows();
     }
@@ -326,17 +327,14 @@ async function resolveRoute(route) {
         if (redirect) {
             return redirect;
         }
-        const [orders, products] = await Promise.all([
-            fetchOrders({
-                clientId: state.profile.id,
-                month,
-                includeItems: true,
-            }),
-            fetchProducts(),
-        ]);
+        const orders = await fetchOrders({
+            clientId: state.profile.id,
+            month,
+            includeItems: true,
+        });
         return {
-            title: "Tu panel",
-            content: renderClientDashboardPage(state.profile, buildClientDashboard(orders), month, products, readOrderDraft()),
+            title: "Mis pedidos",
+            content: renderClientDashboardPage(state.profile, buildClientDashboard(orders), month),
         };
     }
 
@@ -351,24 +349,47 @@ async function resolveRoute(route) {
         };
     }
 
+    if (route.path === "/cliente/carrito") {
+        const redirect = requireRole("client", "/login-cliente", "Debes ingresar como clienta.");
+        if (redirect) {
+            return redirect;
+        }
+        const products = await fetchProducts();
+        return {
+            title: "Carrito",
+            content: renderClientCartReviewPage(products, readOrderDraft()),
+        };
+    }
+
     if (route.path === "/cliente/pedido/nuevo") {
         const redirect = requireRole("client", "/login-cliente", "Debes ingresar como clienta.");
         if (redirect) {
             return redirect;
         }
         const products = await fetchProducts();
+        const editId = Number(route.query.get("edit") || 0);
         const sourceId = Number(route.query.get("source") || 0);
-        const sourceOrder = sourceId ? await fetchOrderById(sourceId, { clientId: state.profile.id }) : null;
-        const draft = sourceOrder
+        const editOrder = editId ? await fetchOrderById(editId, { clientId: state.profile.id }) : null;
+        if (editId && !editOrder) {
+            return { title: "No encontrado", content: renderNotFound("No encontré ese pedido para editar.") };
+        }
+        if (editOrder && editOrder.status !== "pendiente") {
+            return redirectView(`/cliente/pedido/${editOrder.id}`, "Solo puedes editar pedidos pendientes.", "error");
+        }
+        const sourceOrder = !editOrder && sourceId ? await fetchOrderById(sourceId, { clientId: state.profile.id }) : null;
+        const baseOrder = editOrder || sourceOrder;
+        const draft = baseOrder
             ? {
-                selections: buildRepeatSelections(sourceOrder),
-                client_note: sourceOrder.client_note || "",
-                other_request: sourceOrder.other_request || "",
+                selections: buildRepeatSelections(baseOrder),
+                client_note: baseOrder.client_note || "",
+                other_request: baseOrder.other_request || "",
+                source_order_id: sourceOrder?.id || null,
+                edit_order_id: editOrder?.id || null,
             }
             : readOrderDraft();
         return {
-            title: "Nuevo pedido",
-            content: renderClientOrderFormPage(products, draft, sourceOrder),
+            title: editOrder ? "Editar pedido" : "Nuevo pedido",
+            content: renderClientOrderFormPage(products, draft, sourceOrder, editOrder),
         };
     }
 
@@ -638,17 +659,30 @@ async function touchClientLogin(clientId) {
 }
 
 async function fetchProducts(options = {}) {
+    let rows;
+    try {
+        rows = await runQuery(buildProductsQuery(PRODUCT_FIELDS_WITH_IMAGE, options));
+    } catch (error) {
+        if (!isMissingProductImageColumn(error)) {
+            throw error;
+        }
+        rows = await runQuery(buildProductsQuery(PRODUCT_BASE_FIELDS, options));
+    }
+
+    return rows.map(normalizeProduct).sort((a, b) => compareProducts(a, b));
+}
+
+function buildProductsQuery(fields, options = {}) {
     let query = state.client
         .from("products")
-        .select("id,name,display_name,presentation,category,estimated_price,is_active,created_at,updated_at")
+        .select(fields)
         .order("display_name");
 
     if (!options.includeInactive) {
         query = query.eq("is_active", true);
     }
 
-    const rows = await runQuery(query);
-    return rows.map(normalizeProduct).sort((a, b) => compareProducts(a, b));
+    return query;
 }
 
 async function fetchClientsWithOrderCounts() {
@@ -824,6 +858,31 @@ async function createOrder(selections, sourceOrderId, clientNote, otherRequest) 
     return orderId;
 }
 
+async function replacePendingOrder(orderId, selections, clientNote, otherRequest) {
+    const items = buildSecureOrderItems(selections);
+    const cleanOtherRequest = sanitizeText(otherRequest, MAX_OTHER_REQUEST_LENGTH);
+    if (!items.length && !cleanOtherRequest) {
+        throw new Error("Selecciona productos o completa el campo Otro.");
+    }
+
+    const { data, error } = await state.client.rpc("replace_pending_order", {
+        p_order_id: orderId,
+        p_items: items,
+        p_client_note: sanitizeText(clientNote, MAX_CLIENT_NOTE_LENGTH) || null,
+        p_other_request: cleanOtherRequest || null,
+    });
+
+    if (error) {
+        throw error;
+    }
+
+    const updatedOrderId = Number(data);
+    if (!updatedOrderId) {
+        throw new Error("Supabase no devolvió el número del pedido actualizado.");
+    }
+    return updatedOrderId;
+}
+
 async function updateClientProfile(values) {
     const payload = {
         name: sanitizeText(values.name, 120),
@@ -885,31 +944,54 @@ async function upsertClientProfileForCurrentUser(values) {
 async function saveProduct(values) {
     const displayName = sanitizeText(values.display_name || values.name, 120);
     const presentation = sanitizeText(values.presentation, 80);
+    const rawImageUrl = sanitizeText(values.image_url, 1000);
+    const imageUrl = safeProductImageUrl(rawImageUrl);
+    if (rawImageUrl && !imageUrl) {
+        throw new Error("La imagen debe ser una URL http(s) o una ruta ./static/...");
+    }
+
     const payload = {
         display_name: displayName,
         presentation,
         category: CATEGORY_LABELS[values.category] ? values.category : "verduras_hortalizas",
         estimated_price: Math.max(0, Math.round(Number(values.estimated_price) || 0)),
         is_active: values.is_active === true,
+        image_url: imageUrl || null,
     };
 
     if (!displayName) {
         throw new Error("El nombre visible del producto es obligatorio.");
     }
 
-    if (values.id) {
+    try {
+        await saveProductMutation(values.id, payload, displayName);
+    } catch (error) {
+        if (!isMissingProductImageColumn(error) || imageUrl) {
+            throw error;
+        }
+        await saveProductMutation(values.id, withoutImageUrl(payload), displayName);
+    }
+}
+
+async function saveProductMutation(productId, payload, displayName) {
+    if (productId) {
         await runQuery(
             state.client
                 .from("products")
                 .update(payload)
-                .eq("id", values.id)
+                .eq("id", productId)
                 .select("id")
         );
         return;
     }
 
-    payload.name = displayName;
-    await runQuery(state.client.from("products").insert(payload).select("id"));
+    await runQuery(state.client.from("products").insert({ ...payload, name: displayName }).select("id"));
+}
+
+function withoutImageUrl(payload) {
+    const copy = { ...payload };
+    delete copy.image_url;
+    return copy;
 }
 
 async function updateOrderActuals(orderId, status, adminNote, itemUpdates) {
@@ -1069,6 +1151,14 @@ async function handleClick(event) {
             case "focus-category":
                 document.getElementById(actionNode.dataset.target || "")?.scrollIntoView({ behavior: "smooth", block: "start" });
                 break;
+            case "open-cart-review": {
+                const form = actionNode.closest("[data-order-form]") || document.querySelector("[data-order-form]");
+                if (form) {
+                    persistOrderDraft(form);
+                }
+                navigate("/cliente/carrito");
+                break;
+            }
             case "focus-search":
                 document.querySelector(actionNode.dataset.target || "[data-product-search]")?.focus();
                 break;
@@ -1369,9 +1459,12 @@ async function submitClientOrder(form) {
     const sourceOrderId = Number(form.querySelector('input[name="source_order_id"]')?.value || 0);
     const clientNote = sanitizeText(formData.get("client_note"), MAX_CLIENT_NOTE_LENGTH);
     const otherRequest = sanitizeText(formData.get("other_request"), MAX_OTHER_REQUEST_LENGTH);
-    const orderId = await createOrder(selections, sourceOrderId || null, clientNote, otherRequest);
+    const editOrderId = Number(form.querySelector('input[name="edit_order_id"]')?.value || 0);
+    const orderId = editOrderId
+        ? await replacePendingOrder(editOrderId, selections, clientNote, otherRequest)
+        : await createOrder(selections, sourceOrderId || null, clientNote, otherRequest);
     clearOrderDraft();
-    state.flash = { tone: "notice", message: "Pedido guardado. El total fue calculado en Supabase." };
+    state.flash = { tone: "notice", message: editOrderId ? "Solicitud actualizada." : "Pedido guardado. El total fue calculado en Supabase." };
     navigate(`/cliente/pedido/${orderId}`, true);
 }
 
@@ -1384,6 +1477,7 @@ async function submitProductSave(form) {
         presentation: formData.get("presentation"),
         category: formData.get("category"),
         estimated_price: formData.get("estimated_price"),
+        image_url: formData.get("image_url"),
         is_active: formData.get("is_active") === "1",
     });
     state.flash = { tone: "notice", message: "Producto guardado." };
@@ -1402,7 +1496,7 @@ async function switchRole(role) {
     }
 
     const target = targetRole === "client"
-        ? "/cliente/dashboard"
+        ? "/cliente/pedido/nuevo"
         : (state.profile?.must_reset_password ? "/admin/cambiar-clave" : "/admin/dashboard");
     state.flash = { tone: "notice", message: targetRole === "client" ? "Modo clienta activo." : "Modo administrador activo." };
     navigate(target, true);
@@ -1531,11 +1625,11 @@ function renderShell(title, content) {
                     ${renderNavigation()}
                 </nav>
             </header>
+            ${state.role === "client" ? renderClientBottomNav(clientBottomNavActive()) : ""}
             <main class="content-shell">
                 ${flash ? renderFlash(flash) : ""}
                 ${content}
             </main>
-            ${state.role === "client" ? renderClientBottomNav(clientBottomNavActive()) : ""}
         </div>
     `;
 }
@@ -1596,10 +1690,7 @@ function clientBottomNavActive() {
     if (path.includes("perfil")) {
         return "perfil";
     }
-    if (path.includes("pedido/nuevo")) {
-        return "categorias";
-    }
-    if (path === "/cliente/dashboard" || path.includes("pedido/")) {
+    if (path === "/cliente/dashboard" || /^\/cliente\/pedido\/\d+$/.test(path)) {
         return "pedidos";
     }
     return "inicio";
@@ -1622,9 +1713,7 @@ function renderHomePage() {
                 <p class="eyebrow">Tu feria personal</p>
                 <h1>Frescura directo a tu casa.</h1>
                 <p class="lead">Ingresa para armar tu pedido semanal de frutas, verduras y productos seleccionados.</p>
-                <figure class="landing-hero__image" aria-hidden="true">
-                    <img src="${e(PROMO_IMAGE_URL)}" alt="Canasta con verduras frescas">
-                </figure>
+                <figure class="landing-hero__image landing-hero__image--pending" aria-hidden="true"></figure>
                 <div class="landing-actions">
                     <a class="button primary" href="#/login-cliente">Ingresar</a>
                 </div>
@@ -1740,14 +1829,7 @@ function renderAdminPasswordResetPage(admin) {
     `;
 }
 
-function renderClientDashboardPage(client, dashboard, month, products = [], draft = {}) {
-    const firstName = firstWord(client.name) || "clienta";
-    const selections = draft.selections || {};
-    const clientNote = draft.client_note || "";
-    const otherRequest = draft.other_request || "";
-    const activeProducts = products.filter((product) => product.is_active !== false);
-    const featuredProducts = selectFeaturedProducts(activeProducts);
-    const quickCategories = CATEGORY_CHOICES.filter(([category]) => activeProducts.some((product) => product.category === category)).slice(0, 5);
+function renderClientDashboardPage(client, dashboard, month) {
     const weeks = dashboard.weeks.length
         ? dashboard.weeks.map((week, index) => `
             <details class="week-card" ${index === 0 ? "open" : ""}>
@@ -1764,84 +1846,13 @@ function renderClientDashboardPage(client, dashboard, month, products = [], draf
             </details>
         `).join("")
         : `<p class="muted">Todavía no hay pedidos en este mes.</p>`;
-    const featuredMarkup = featuredProducts.length
-        ? featuredProducts.map((product) => renderClientProductCard(product, selectionForProduct(selections, product.id), { category: product.category })).join("")
-        : `<section class="empty-state"><p class="eyebrow">Catálogo</p><h2>Sin productos activos</h2><p class="muted">Puedes usar el campo Otro mientras la administradora actualiza el catálogo.</p></section>`;
 
     return `
-        <section class="mobile-shop-home">
-            <section class="shop-greeting">
-                <div>
-                    <h1>Hola, ${e(firstName)}.</h1>
-                    <p>¿Qué frutas y verduras frescas vas a pedir hoy?</p>
-                </div>
-            </section>
-
-            <div class="shop-searchbar mobile-searchbar">
-                <input type="search" data-product-search placeholder="Buscar frutas, verduras y más..." aria-label="Buscar producto">
-            </div>
-
-            <nav class="category-tabs mobile-category-tabs" aria-label="Categorías principales">
-                ${quickCategories.map(([value, label], index) => `<a class="category-chip ${index === 0 ? "is-active" : ""}" href="#/cliente/pedido/nuevo">${e(label)}</a>`).join("")}
-            </nav>
-
-            <section class="market-promo mobile-market-promo">
-                <div class="market-promo__copy">
-                    <p class="eyebrow">Selección semanal</p>
-                    <h2>Frescura que se siente</h2>
-                    <p>Productos escogidos para llegar directo a tu casa.</p>
-                    <button class="promo-cta" type="button" data-action="focus-category" data-target="featured-products">Ver productos</button>
-                </div>
-                <figure class="promo-produce" aria-hidden="true">
-                    <img class="promo-basket" src="${e(PROMO_IMAGE_URL)}" alt="Canasta con verduras frescas">
-                </figure>
-            </section>
-
-            <form id="client-home-order-form" class="mobile-shop-order" data-form="client-order-create" data-order-form data-delivery-fee="${DELIVERY_FEE}">
-                <input type="hidden" name="source_order_id" value="">
-                <section class="featured-section product-columns" id="featured-products">
-                    <div class="featured-heading">
-                        <h2>Productos destacados</h2>
-                        <a href="#/cliente/pedido/nuevo">Ver todos</a>
-                    </div>
-                    <p class="empty-search" data-product-search-empty hidden>No hay productos con esa búsqueda.</p>
-                    <div class="product-table mobile-product-grid">
-                        ${featuredMarkup}
-                    </div>
-                </section>
-
-                <details class="home-notes-card">
-                    <summary>Otro producto u observaciones</summary>
-                    <label>Otro
-                        <textarea name="other_request" rows="3" maxlength="${MAX_OTHER_REQUEST_LENGTH}" data-other-request placeholder="Pide aquí algo que no esté en el listado.">${e(otherRequest)}</textarea>
-                    </label>
-                    <label>Observaciones
-                        <textarea name="client_note" rows="3" maxlength="${MAX_CLIENT_NOTE_LENGTH}" data-client-note>${e(clientNote)}</textarea>
-                    </label>
-                </details>
-
-                <p class="field-note mobile-order-status" data-inline-status>Agrega productos y envía el pedido cuando esté listo.</p>
-
-                <div class="floating-cart" data-floating-cart hidden>
-                    <div class="floating-cart__summary">
-                        <span data-selected-count>0</span>
-                        <div>
-                            <strong>Ver carrito</strong>
-                            <small><span data-subtotal-estimated>${formatCurrency(0)}</span> en productos</small>
-                        </div>
-                    </div>
-                    <strong data-estimated-total>${formatCurrency(DELIVERY_FEE)}</strong>
-                    <button class="floating-cart__submit" type="submit" data-busy-text="Enviando..." aria-label="Enviar pedido">Enviar</button>
-                </div>
-            </form>
-
-        </section>
-
-        <section class="client-month-panel" id="client-orders">
+        <section class="client-orders-page client-month-panel" id="client-orders">
             <div class="section-head compact-heading">
                 <div>
                     <p class="eyebrow">Mis pedidos</p>
-                    <h2>Resumen del mes</h2>
+                    <h1>Resumen del mes</h1>
                     <p class="muted">${e(client.email)} | ${e(client.address)}</p>
                 </div>
                 <div class="hero-actions">
@@ -1853,7 +1864,7 @@ function renderClientDashboardPage(client, dashboard, month, products = [], draf
                 </div>
             </div>
 
-            <section class="grid three-up">
+            <section class="grid three-up client-summary-grid">
                 <article class="stat-card">
                     <span class="stat-value">${formatCurrency(dashboard.summary.monthly_total)}</span>
                     <span class="stat-label">gasto del mes</span>
@@ -1868,7 +1879,7 @@ function renderClientDashboardPage(client, dashboard, month, products = [], draf
                 </article>
             </section>
 
-            <section class="panel">
+            <section class="panel client-history-panel">
                 <h2>Desglose semanal</h2>
                 ${weeks}
             </section>
@@ -1920,7 +1931,7 @@ function renderClientOrderCard(order) {
                 </div>
                 <div class="hero-actions">
                     <a class="button ghost" href="#/cliente/pedido/${order.id}">Ver detalle</a>
-                    <a class="button ghost" href="#/cliente/pedido/nuevo?source=${order.id}">Repetir pedido</a>
+                    <a class="button ghost" href="#/cliente/pedido/nuevo?${order.status === "pendiente" ? "edit" : "source"}=${order.id}">${order.status === "pendiente" ? "Editar solicitud" : "Repetir pedido"}</a>
                 </div>
             </div>
             <ul class="simple-list">
@@ -1971,7 +1982,21 @@ function renderProductThumb(product, className = 'product-thumb') {
 }
 
 function productImageSrc(product) {
-    return productPhotoUrl(productPhotoTerms(product));
+    return safeProductImageUrl(product.image_url) || productPhotoUrl(productPhotoTerms(product));
+}
+
+function safeProductImageUrl(value) {
+    const url = sanitizeText(value, 1000);
+    if (!url) {
+        return "";
+    }
+    if (/^(https?:)?\/\//i.test(url)) {
+        return url;
+    }
+    if (/^\.?\/?static\//i.test(url)) {
+        return url.startsWith("./") ? url : `./${url.replace(/^\/+/, "")}`;
+    }
+    return "";
 }
 
 function productFallbackImageSrc(product) {
@@ -2021,7 +2046,7 @@ function renderClientAppHeader(title = "Catálogo") {
         <header class="client-app-header">
             <button class="app-back-button" type="button" data-action="logout" aria-label="Salir de la app"></button>
             <img class="client-app-logo" src="./static/logo-verduleria-isa.png" alt="${e(APP_NAME)}">
-            <button class="app-cart-button" type="button" data-action="focus-category" data-target="client-order-notes" aria-label="Ver carrito">
+            <button class="app-cart-button" type="button" data-action="open-cart-review" aria-label="Ver carrito">
                 <span class="app-cart-icon" aria-hidden="true"></span>
                 <span data-selected-count>0</span>
             </button>
@@ -2071,14 +2096,13 @@ function selectionForProduct(selections, productId) {
 function renderClientProductCard(product, selection = {}, options = {}) {
     const displayName = productDisplayName(product);
     const category = options.category || product.category || "";
-    const selectedUnit = normalizeUnit(selection.requested_unit || selection.unit || "unidad");
+    const selectedUnit = normalizeUnit(selection.requested_unit || selection.unit || "kg");
     const quantity = normalizeQuantity(selection.quantity);
     const hasQuantity = quantity > 0;
     const quantityValue = hasQuantity ? formatQuantityInputValue(quantity) : "";
 
     return `
         <div class="product-row mobile-product-card ${hasQuantity ? "is-selected" : ""}" data-product-id="${product.id}" data-product-name="${e(productSearchText(product))}" data-product-category="${e(category)}">
-            <button class="favorite-button" type="button" aria-label="Guardar ${e(displayName)} como favorito">&#9825;</button>
             <div class="product-info">
                 ${renderProductThumb(product)}
                 <div class="product-copy">
@@ -2115,29 +2139,26 @@ function renderClientProductCard(product, selection = {}, options = {}) {
 }
 
 function renderClientBottomNav(active = "inicio") {
-    const item = (key, href, label, iconClass, disabled = false) => {
+    const item = (key, href, label, iconClass) => {
         const activeClass = active === key ? " active" : "";
         const icon = `<span class="nav-icon ${iconClass}" aria-hidden="true"></span>`;
-        if (disabled) {
-            return `<button class="${activeClass.trim()}" type="button" disabled>${icon}<span>${label}</span></button>`;
-        }
         return `<a class="${activeClass.trim()}" href="${href}">${icon}<span>${label}</span></a>`;
     };
     return `
-        <nav class="mobile-bottom-nav" aria-label="Navegación clienta">
+        <nav class="mobile-bottom-nav client-top-nav" aria-label="Navegación clienta">
             ${item("inicio", "#/cliente/pedido/nuevo", "Inicio", "nav-icon-home")}
-            ${item("categorias", "#/cliente/pedido/nuevo", "Categorías", "nav-icon-grid")}
             ${item("pedidos", "#/cliente/dashboard", "Pedidos", "nav-icon-bag")}
-            ${item("favoritos", "#", "Favoritos", "nav-icon-heart", true)}
             ${item("perfil", "#/cliente/perfil", "Perfil", "nav-icon-user")}
         </nav>
     `;
 }
 
-function renderClientOrderFormPage(products, draft, sourceOrder) {
+function renderClientOrderFormPage(products, draft, sourceOrder, editOrder) {
     const selections = draft.selections || {};
     const clientNote = draft.client_note || "";
     const otherRequest = draft.other_request || "";
+    const sourceOrderId = sourceOrder?.id || draft.source_order_id || "";
+    const editOrderId = editOrder?.id || draft.edit_order_id || "";
     const groupedProducts = groupProducts(products);
     const activeCategories = CATEGORY_CHOICES.filter(([category]) => (groupedProducts.get(category) || []).length > 0);
     const groupsMarkup = activeCategories
@@ -2159,12 +2180,13 @@ function renderClientOrderFormPage(products, draft, sourceOrder) {
 
     return `
         <form class="catalog-app mobile-shop-order" data-form="client-order-create" data-order-form data-delivery-fee="${DELIVERY_FEE}">
-            <input type="hidden" name="source_order_id" value="${sourceOrder?.id || ""}">
+            <input type="hidden" name="source_order_id" value="${sourceOrderId}">
+            <input type="hidden" name="edit_order_id" value="${editOrderId}">
             ${renderClientAppHeader("Catálogo")}
 
             <section class="catalog-title-row">
                 <h1>Catálogo</h1>
-                ${sourceOrder ? `<div class="badge-block">Basado en el pedido #${sourceOrder.id}</div>` : ""}
+                ${editOrder ? `<div class="badge-block">Editando pedido #${editOrder.id}</div>` : sourceOrder ? `<div class="badge-block">Basado en el pedido #${sourceOrder.id}</div>` : ""}
             </section>
 
             <section class="catalog-toolbar">
@@ -2181,7 +2203,6 @@ function renderClientOrderFormPage(products, draft, sourceOrder) {
             <section class="catalog-week-banner">
                 <span aria-hidden="true"></span>
                 <strong>Verduras frescas seleccionadas para esta semana</strong>
-                <img src="${e(PROMO_IMAGE_URL)}" alt="Canasta con verduras frescas">
             </section>
 
             <section class="product-columns catalog-products" id="catalog-products">
@@ -2210,8 +2231,79 @@ function renderClientOrderFormPage(products, draft, sourceOrder) {
                     </div>
                 </div>
                 <strong data-estimated-total>${formatCurrency(DELIVERY_FEE)}</strong>
-                <button class="floating-cart__submit" type="submit" data-busy-text="Enviando..." aria-label="Enviar pedido">Enviar</button>
+                <button class="floating-cart__submit" type="button" data-action="open-cart-review" aria-label="Abrir carrito">Abrir</button>
             </div>
+        </form>
+    `;
+}
+
+function renderClientCartReviewPage(products, draft) {
+    const selections = draft.selections || {};
+    const productById = new Map(products.map((product) => [product.id, product]));
+    const selectedItems = Object.entries(selections)
+        .map(([productId, selection]) => {
+            const product = productById.get(Number(productId));
+            const quantity = normalizeQuantity(selection?.quantity);
+            return product && quantity > 0 ? { product, selection: { ...selection, quantity } } : null;
+        })
+        .filter(Boolean);
+    const rows = selectedItems.map(({ product, selection }) => `
+        <div class="cart-review-item product-row is-selected" data-product-id="${product.id}" data-product-name="${e(productSearchText(product))}" data-product-category="${e(product.category)}">
+            <div class="product-info">
+                ${renderProductThumb(product, "product-thumb small")}
+                <div class="product-copy">
+                    <strong>${e(productDisplayName(product))}</strong>
+                    ${product.presentation ? `<span class="product-presentation">${e(product.presentation)}</span>` : ""}
+                    <span class="product-price">${formatCurrency(product.estimated_price)} <small>referencia</small></span>
+                </div>
+            </div>
+            <div class="product-controls compact-product-controls">
+                <div class="quantity-selector" data-quantity-selector>
+                    <button class="quantity-step" type="button" data-action="decrement-product" data-product-id="${product.id}" aria-label="Quitar ${e(productDisplayName(product))}">-</button>
+                    <input type="number" step="0.25" min="0" max="${MAX_QUANTITY}" inputmode="decimal" name="qty_${product.id}" aria-label="Cantidad ${e(productDisplayName(product))}" value="${e(formatQuantityInputValue(selection.quantity))}" data-price="${product.estimated_price}" placeholder="0" data-quantity-input>
+                    <button class="quantity-step" type="button" data-action="increment-product" data-product-id="${product.id}" aria-label="Agregar ${e(productDisplayName(product))}">+</button>
+                </div>
+                <select name="unit_${product.id}" aria-label="Unidad ${e(productDisplayName(product))}" data-unit-input>
+                    ${UNIT_CHOICES.map(([value, label]) => `<option value="${value}" ${normalizeUnit(selection.requested_unit || selection.unit || "kg") === value ? "selected" : ""}>${label}</option>`).join("")}
+                </select>
+            </div>
+        </div>
+    `).join("");
+
+    return `
+        <form class="catalog-app cart-review-page mobile-shop-order" data-form="client-order-create" data-order-form data-delivery-fee="${DELIVERY_FEE}">
+            <input type="hidden" name="source_order_id" value="${e(draft.source_order_id || "")}">
+            <input type="hidden" name="edit_order_id" value="${e(draft.edit_order_id || "")}">
+            ${renderClientAppHeader("Carrito")}
+
+            <section class="catalog-title-row cart-title-row">
+                <h1>Detalle de solicitud</h1>
+                <a class="button ghost" href="#/cliente/pedido/nuevo">Seguir agregando</a>
+            </section>
+
+            <section class="panel cart-review-panel">
+                <h2>Productos elegidos</h2>
+                ${rows || `<p class="muted">Aún no hay productos del catálogo. Puedes volver al catálogo o usar el campo Otro.</p>`}
+            </section>
+
+            <details class="home-notes-card catalog-notes-card" id="client-order-notes" open>
+                <summary>Otro producto u observaciones</summary>
+                <label>Otro
+                    <textarea name="other_request" rows="3" maxlength="${MAX_OTHER_REQUEST_LENGTH}" data-other-request placeholder="Pide aquí algo que no esté en el listado.">${e(draft.other_request || "")}</textarea>
+                </label>
+                <label>Observaciones
+                    <textarea name="client_note" rows="3" maxlength="${MAX_CLIENT_NOTE_LENGTH}" data-client-note>${e(draft.client_note || "")}</textarea>
+                </label>
+            </details>
+
+            <section class="panel cart-submit-panel">
+                <div class="metric-line"><span>Productos elegidos</span><strong data-selected-count>0</strong></div>
+                <div class="metric-line"><span>Subtotal productos</span><strong data-subtotal-estimated>${formatCurrency(0)}</strong></div>
+                <div class="metric-line"><span>Despacho fijo</span><strong>${formatCurrency(DELIVERY_FEE)}</strong></div>
+                <div class="metric-line"><span>Total estimado</span><strong data-estimated-total>${formatCurrency(DELIVERY_FEE)}</strong></div>
+                <p class="field-note" data-inline-status>Revisa el detalle antes de enviar tu solicitud.</p>
+                <button class="button primary" type="submit" data-busy-text="Enviando...">Enviar solicitud</button>
+            </section>
         </form>
     `;
 }
@@ -2226,8 +2318,8 @@ function renderClientOrderDetailPage(order) {
             </div>
             <div class="hero-actions">
                 <button class="button ghost" type="button" data-action="print-order" data-order-id="${order.id}">Imprimir / PDF</button>
-                <a class="button ghost" href="#/cliente/pedido/nuevo?source=${order.id}">Repetir pedido</a>
-                <a class="button ghost" href="#/cliente/dashboard">Volver al panel</a>
+                <a class="button ghost" href="#/cliente/pedido/nuevo?${order.status === "pendiente" ? "edit" : "source"}=${order.id}">${order.status === "pendiente" ? "Editar solicitud" : "Repetir pedido"}</a>
+                <a class="button ghost" href="#/cliente/dashboard">Volver a pedidos</a>
             </div>
         </section>
 
@@ -2508,6 +2600,9 @@ function renderAdminProductsPage(products) {
                 <label>Precio estimado
                     <input type="number" name="estimated_price" min="0" required>
                 </label>
+                <label>Imagen producto
+                    <input type="url" name="image_url" placeholder="https://...">
+                </label>
                 <label>Activo
                     <select name="is_active">
                         <option value="1">Sí</option>
@@ -2532,6 +2627,7 @@ function renderAdminProductsPage(products) {
                             ${CATEGORY_CHOICES.map(([value, label]) => `<option value="${e(value)}" ${product.category === value ? "selected" : ""}>${e(label)}</option>`).join("")}
                         </select>
                         <input type="number" name="estimated_price" min="0" value="${product.estimated_price}" required>
+                        <input type="url" name="image_url" value="${e(product.image_url)}" placeholder="URL imagen">
                         <select name="is_active">
                             <option value="1" ${product.is_active ? "selected" : ""}>Activo</option>
                             <option value="0" ${product.is_active ? "" : "selected"}>Inactivo</option>
@@ -2662,7 +2758,7 @@ function renderSetupPanel(extraMessage = "") {
             ${extraMessage ? `<div class="error-box"><p>${e(extraMessage)}</p></div>` : ""}
             <div class="list-grid">
                 <p>1. Completa <code>docs/static/config.js</code> con tu <code>SUPABASE_ANON_KEY</code>.</p>
-                <p>2. Ejecuta <code>supabase/sql/009_github_pages_auth.sql</code>, <code>supabase/sql/011_admin_first_login_setup.sql</code>, <code>supabase/sql/012_catalog_units_other_request.sql</code>, <code>supabase/sql/013_client_registration_repair.sql</code> y <code>supabase/sql/014_product_classification_presentation.sql</code> en el SQL Editor.</p>
+                <p>2. Ejecuta <code>supabase/sql/009_github_pages_auth.sql</code>, <code>supabase/sql/011_admin_first_login_setup.sql</code>, <code>supabase/sql/012_catalog_units_other_request.sql</code>, <code>supabase/sql/013_client_registration_repair.sql</code>, <code>supabase/sql/014_product_classification_presentation.sql</code> y <code>supabase/sql/015_product_images_and_order_edit.sql</code> en el SQL Editor.</p>
                 <p>3. Crea las administradoras en Supabase Auth con la clave temporal acordada.</p>
                 <p>4. Publica la carpeta <code>docs/</code> desde GitHub Pages.</p>
             </div>
@@ -2680,7 +2776,7 @@ function renderErrorView(error) {
                 <p>${e(friendlyError(error))}</p>
             </div>
             <div class="list-grid">
-                <p>Archivos clave: <code>supabase/sql/009_github_pages_auth.sql</code>, <code>supabase/sql/011_admin_first_login_setup.sql</code>, <code>supabase/sql/012_catalog_units_other_request.sql</code>, <code>supabase/sql/013_client_registration_repair.sql</code> y <code>supabase/sql/014_product_classification_presentation.sql</code></p>
+                <p>Archivos clave: <code>supabase/sql/009_github_pages_auth.sql</code>, <code>supabase/sql/011_admin_first_login_setup.sql</code>, <code>supabase/sql/012_catalog_units_other_request.sql</code>, <code>supabase/sql/013_client_registration_repair.sql</code>, <code>supabase/sql/014_product_classification_presentation.sql</code> y <code>supabase/sql/015_product_images_and_order_edit.sql</code></p>
                 <p>Config pública: <code>docs/static/config.js</code></p>
                 <p>Publicación: GitHub Pages apuntando a la carpeta <code>docs/</code></p>
             </div>
@@ -2906,7 +3002,7 @@ function buildRepeatSelections(order) {
 }
 
 function readOrderDraft() {
-    const emptyDraft = { selections: {}, client_note: "", other_request: "" };
+    const emptyDraft = { selections: {}, client_note: "", other_request: "", source_order_id: null, edit_order_id: null };
     try {
         const raw = window.localStorage?.getItem(cartStorageKey());
         if (!raw) {
@@ -2925,6 +3021,8 @@ function persistOrderDraft(form) {
             selections: collectOrderSelections(form, { relaxed: true }),
             client_note: sanitizeText(formData.get("client_note"), MAX_CLIENT_NOTE_LENGTH),
             other_request: sanitizeText(formData.get("other_request"), MAX_OTHER_REQUEST_LENGTH),
+            source_order_id: Number(formData.get("source_order_id") || 0) || null,
+            edit_order_id: Number(formData.get("edit_order_id") || 0) || null,
         };
         if (!Object.keys(draft.selections).length && !draft.client_note && !draft.other_request) {
             window.localStorage?.removeItem(cartStorageKey());
@@ -2954,6 +3052,8 @@ function normalizeOrderDraft(raw) {
         selections: {},
         client_note: sanitizeText(raw?.client_note, MAX_CLIENT_NOTE_LENGTH),
         other_request: sanitizeText(raw?.other_request, MAX_OTHER_REQUEST_LENGTH),
+        source_order_id: Number(raw?.source_order_id || 0) || null,
+        edit_order_id: Number(raw?.edit_order_id || 0) || null,
     };
 
     const rawSelections = raw?.selections || {};
@@ -3227,7 +3327,7 @@ function formatQty(value) {
 }
 
 function normalizeUnit(value) {
-    return value === "kg" ? "kg" : "unidad";
+    return value === "unidad" ? "unidad" : "kg";
 }
 
 function unitLabel(value) {
@@ -3345,6 +3445,7 @@ function normalizeProduct(row) {
         is_active: Boolean(row.is_active),
         created_at: row.created_at || "",
         updated_at: row.updated_at || "",
+        image_url: sanitizeText(row.image_url, 1000),
     };
 }
 
@@ -3501,6 +3602,11 @@ function setInlineStatus(form, message, tone = "notice") {
     statusNode.classList.toggle("inline-error", tone === "error");
 }
 
+function isMissingProductImageColumn(error) {
+    const raw = typeof error === "string" ? error : error?.message || "";
+    return /column .*image_url.*does not exist|Could not find .*image_url.*products|schema cache.*image_url/i.test(raw);
+}
+
 function withSupabaseTimeout(promise, message, timeoutMs = SUPABASE_TIMEOUT_MS) {
     let timeoutId = 0;
     const timeout = new Promise((_, reject) => {
@@ -3532,6 +3638,9 @@ function friendlyError(error) {
     }
     if (/column .*billing_type.*does not exist/i.test(raw)) {
         return "Falta ejecutar supabase/sql/013_client_registration_repair.sql en Supabase para completar el registro de clientas.";
+    }
+    if (/column .*image_url.*does not exist|function .*replace_pending_order/i.test(raw)) {
+        return "Falta ejecutar supabase/sql/015_product_images_and_order_edit.sql en Supabase para editar imágenes y actualizar solicitudes pendientes.";
     }
     if (/column .*display_name.*does not exist|column .*presentation.*does not exist|products_category_check|invalid input value .*products/i.test(raw)) {
         return "Falta ejecutar supabase/sql/014_product_classification_presentation.sql en Supabase para activar las categorías nuevas y la presentación limpia.";

@@ -1,4 +1,4 @@
-﻿# Supabase para Verduleria Isa
+# Supabase para Verduleria Isa
 
 Esta carpeta deja preparado el backend de datos para que la app use Supabase en lugar de SQLite local.
 
@@ -17,6 +17,9 @@ Esta carpeta deja preparado el backend de datos para que la app use Supabase en 
 - `sql/010_secure_order_creation.sql`: crea el flujo seguro de pedidos con totales calculados en Supabase.
 - `sql/011_admin_first_login_setup.sql`: prepara administradoras y obliga cambio de clave temporal.
 - `sql/012_catalog_units_other_request.sql`: actualiza el catalogo desde `Lista de frutas y verduras 01-08-2026.xlsx`, deja inactivos los productos ausentes, agrega unidad/kg y permite el campo `Otro`.
+- `sql/013_client_registration_repair.sql`: repara registro de clientas con Supabase Auth + RLS.
+- `sql/014_product_classification_presentation.sql`: limpia categorias visibles y presentaciones.
+- `sql/015_product_images_and_order_edit.sql`: agrega fotos reales editables y permite editar pedidos pendientes.
 - `.env.example`: variables necesarias para que la app apunte a Supabase.
 
 ## Como configurarlo en tu Supabase
@@ -58,6 +61,9 @@ Para activarla:
 3. Crea en Supabase Auth las administradoras con el mismo correo que existe en la tabla `admins`
 4. Ejecuta `sql/011_admin_first_login_setup.sql`
 5. Ejecuta `sql/012_catalog_units_other_request.sql`
+6. Ejecuta `sql/013_client_registration_repair.sql`
+7. Ejecuta `sql/014_product_classification_presentation.sql`
+8. Ejecuta `sql/015_product_images_and_order_edit.sql`
 
 En el SQL Editor copia y pega el contenido completo del archivo `.sql`; no pegues solo la ruta del archivo.
 
