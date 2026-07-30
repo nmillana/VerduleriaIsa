@@ -1675,50 +1675,32 @@ async function printMonthlySummary(month) {
 }
 
 async function exportConsolidationXls(month) {
-    const orders = await fetchOrders({ month, includeItems: true });
+    const orders = await fetchOrders({ month, includeItems: true, includeClients: true });
     const consolidation = buildConsolidation(orders);
-    const rows = consolidation.flatMap((week) => week.products.map((product) => `
-        <tr>
-            <td>${e(week.label)}</td>
-            <td>${e(product.product_name)}</td>
-            <td>${e(formatQty(product.cantidad))}</td>
-            <td>${e(unitLabel(product.requested_unit))}</td>
-            <td>${product.precio_unitario}</td>
-            <td>${product.total}</td>
-        </tr>
-    `)).join("");
-    const emptyRow = `<tr><td colspan="6">Sin pedidos para este mes.</td></tr>`;
-    const markup = `
-        <html>
-        <head>
-            <meta charset="utf-8">
-            <style>
-                body { font-family: Arial, sans-serif; color: #173127; }
-                h1 { color: #0b3d27; }
-                table { border-collapse: collapse; width: 100%; }
-                th { background: #1f6d2d; color: #fff; }
-                th, td { border: 1px solid #cfe0c4; padding: 8px; text-align: left; }
-            </style>
-        </head>
-        <body>
-            <h1>Consolidado de compras ${e(month)}</h1>
-            <table>
-                <thead>
-                    <tr>
-                        <th>Semana</th>
-                        <th>Producto</th>
-                        <th>Cantidad</th>
-                        <th>Unidad</th>
-                        <th>Precio unitario</th>
-                        <th>Total</th>
-                    </tr>
-                </thead>
-                <tbody>${rows || emptyRow}</tbody>
-            </table>
-        </body>
-        </html>
-    `;
-    downloadFile(`consolidado_${month}.xls`, "application/vnd.ms-excel;charset=utf-8", `\ufeff${markup}`);
+    const summaryRows = consolidation.flatMap((week) => week.products.map((product) => [
+        week.label,
+        product.product_name,
+        formatQty(product.cantidad),
+        unitLabel(product.requested_unit),
+        product.precio_unitario,
+        product.total,
+    ]));
+    const detailRows = buildConsolidationClientDetailRows(orders);
+    const workbook = buildExcelWorkbook([
+        {
+            name: "Resumen compra",
+            columns: ["Semana", "Producto", "Cantidad", "Unidad", "Precio unitario", "Total"],
+            rows: summaryRows,
+            empty: "Sin pedidos para este mes.",
+        },
+        {
+            name: "Detalle clientas",
+            columns: ["Semana", "Pedido", "Fecha", "Clienta", "Telefono", "Direccion", "Estado", "Producto", "Cantidad", "Unidad", "Subtotal estimado", "Subtotal real", "Nota"],
+            rows: detailRows,
+            empty: "Sin detalle para este mes.",
+        },
+    ]);
+    downloadFile(`consolidado_${month}.xls`, "application/vnd.ms-excel;charset=utf-8", `\ufeff${workbook}`);
 }
 
 
@@ -2334,8 +2316,10 @@ function selectionForProduct(selections, productId) {
 function renderClientProductCard(product, selection = {}, options = {}) {
     const displayName = productDisplayName(product);
     const category = options.category || product.category || "";
-    const selectedUnit = normalizeUnit(selection.requested_unit || selection.unit || "kg");
+    const unitChoices = unitChoicesForProduct(product);
+    const selectedUnit = normalizeUnitForProduct(selection.requested_unit || selection.unit, product);
     const quantity = normalizeQuantity(selection.quantity);
+    const quantityStep = selectedUnit === "kg" ? "0.25" : "1";
     const hasQuantity = quantity > 0;
     const quantityValue = hasQuantity ? formatQuantityInputValue(quantity) : "";
 
@@ -2355,7 +2339,7 @@ function renderClientProductCard(product, selection = {}, options = {}) {
                     <button class="quantity-step" type="button" data-action="decrement-product" data-product-id="${product.id}" aria-label="Quitar ${e(displayName)}">-</button>
                     <input
                         type="number"
-                        step="0.25"
+                        step="${quantityStep}"
                         min="0"
                         max="${MAX_QUANTITY}"
                         inputmode="decimal"
@@ -2369,7 +2353,7 @@ function renderClientProductCard(product, selection = {}, options = {}) {
                     <button class="quantity-step" type="button" data-action="increment-product" data-product-id="${product.id}" aria-label="Agregar ${e(displayName)}">+</button>
                 </div>
                 <select name="unit_${product.id}" aria-label="Unidad ${e(displayName)}" data-unit-input>
-                    ${UNIT_CHOICES.map(([value, label]) => `<option value="${value}" ${selectedUnit === value ? "selected" : ""}>${label}</option>`).join("")}
+                    ${unitChoices.map(([value, label]) => `<option value="${value}" ${selectedUnit === value ? "selected" : ""}>${e(label)}</option>`).join("")}
                 </select>
             </div>
         </div>
@@ -2490,7 +2474,11 @@ function renderClientCartReviewPage(products, draft) {
     const cancelEditAction = draft.edit_order_id
         ? `<button class="button ghost" type="button" data-action="cancel-order-edit" data-target="/cliente/pedido/${draft.edit_order_id}">Cancelar edición</button>`
         : "";
-    const rows = selectedItems.map(({ product, selection }) => `
+    const rows = selectedItems.map(({ product, selection }) => {
+        const unitChoices = unitChoicesForProduct(product);
+        const selectedUnit = normalizeUnitForProduct(selection.requested_unit || selection.unit, product);
+        const quantityStep = selectedUnit === "kg" ? "0.25" : "1";
+        return `
         <div class="cart-review-item product-row is-selected" data-product-id="${product.id}" data-product-name="${e(productSearchText(product))}" data-product-category="${e(product.category)}">
             <div class="product-info">
                 ${renderProductThumb(product, "product-thumb small")}
@@ -2503,15 +2491,16 @@ function renderClientCartReviewPage(products, draft) {
             <div class="product-controls compact-product-controls">
                 <div class="quantity-selector" data-quantity-selector>
                     <button class="quantity-step" type="button" data-action="decrement-product" data-product-id="${product.id}" aria-label="Quitar ${e(productDisplayName(product))}">-</button>
-                    <input type="number" step="0.25" min="0" max="${MAX_QUANTITY}" inputmode="decimal" name="qty_${product.id}" aria-label="Cantidad ${e(productDisplayName(product))}" value="${e(formatQuantityInputValue(selection.quantity))}" data-price="${product.estimated_price}" placeholder="0" data-quantity-input>
+                    <input type="number" step="${quantityStep}" min="0" max="${MAX_QUANTITY}" inputmode="decimal" name="qty_${product.id}" aria-label="Cantidad ${e(productDisplayName(product))}" value="${e(formatQuantityInputValue(selection.quantity))}" data-price="${product.estimated_price}" placeholder="0" data-quantity-input>
                     <button class="quantity-step" type="button" data-action="increment-product" data-product-id="${product.id}" aria-label="Agregar ${e(productDisplayName(product))}">+</button>
                 </div>
                 <select name="unit_${product.id}" aria-label="Unidad ${e(productDisplayName(product))}" data-unit-input>
-                    ${UNIT_CHOICES.map(([value, label]) => `<option value="${value}" ${normalizeUnit(selection.requested_unit || selection.unit || "kg") === value ? "selected" : ""}>${label}</option>`).join("")}
+                    ${unitChoices.map(([value, label]) => `<option value="${value}" ${selectedUnit === value ? "selected" : ""}>${e(label)}</option>`).join("")}
                 </select>
             </div>
         </div>
-    `).join("");
+    `;
+    }).join("");
 
     return `
         <form class="catalog-app cart-review-page mobile-shop-order" data-form="client-order-create" data-order-form data-delivery-fee="${DELIVERY_FEE}">
@@ -2691,7 +2680,7 @@ function renderAdminDashboardPage(dashboard, recentOrders, month) {
             </div>
             <table class="data-table">
                 <thead>
-                    <tr><th>Pedido</th><th>Clienta</th><th>Estado</th><th>Total</th><th></th></tr>
+                    <tr><th>N°</th><th>Clienta</th><th>Estado</th><th>Total</th><th>Fecha</th><th></th></tr>
                 </thead>
                 <tbody>
                     ${recentOrders.length ? recentOrders.map((order) => `
@@ -2700,9 +2689,10 @@ function renderAdminDashboardPage(dashboard, recentOrders, month) {
                             <td>${e(order.client_name)}</td>
                             <td>${e(statusLabel(order.status))}</td>
                             <td>${formatCurrency(order.display_total)}</td>
+                            <td>${e(formatDateTime(order.created_at))}</td>
                             <td><a href="#/admin/pedido/${order.id}">Abrir</a></td>
                         </tr>
-                    `).join("") : `<tr><td colspan="5">Sin pedidos en este mes.</td></tr>`}
+                    `).join("") : `<tr><td colspan="6">Sin pedidos en este mes.</td></tr>`}
                 </tbody>
             </table>
         </section>
@@ -2731,20 +2721,19 @@ function renderAdminOrdersPage(orders, month, status) {
         <section class="panel">
             <table class="data-table">
                 <thead>
-                    <tr><th>Pedido</th><th>Clienta</th><th>Correo</th><th>Estado</th><th>Total</th><th>Fecha</th><th></th></tr>
+                    <tr><th>N°</th><th>Clienta</th><th>Estado</th><th>Total</th><th>Fecha</th><th></th></tr>
                 </thead>
                 <tbody>
                     ${orders.length ? orders.map((order) => `
                         <tr>
                             <td>#${order.id}</td>
                             <td>${e(order.client_name)}</td>
-                            <td>${e(order.client_email)}</td>
                             <td>${e(statusLabel(order.status))}</td>
                             <td>${formatCurrency(order.display_total)}</td>
                             <td>${e(formatDateTime(order.created_at))}</td>
                             <td><a href="#/admin/pedido/${order.id}">Abrir</a></td>
                         </tr>
-                    `).join("") : `<tr><td colspan="7">No hay pedidos para este filtro.</td></tr>`}
+                    `).join("") : `<tr><td colspan="6">No hay pedidos para este filtro.</td></tr>`}
                 </tbody>
             </table>
         </section>
@@ -3294,6 +3283,87 @@ function buildConsolidation(orders) {
         products: [...products.values()].sort((a, b) => a.product_name.localeCompare(b.product_name, "es")),
         total: [...products.values()].reduce((sum, product) => sum + product.total, 0),
     }));
+}
+
+
+function buildConsolidationClientDetailRows(orders) {
+    return orders
+        .slice()
+        .sort((a, b) => {
+            return (
+                String(a.client_name || "").localeCompare(String(b.client_name || ""), "es") ||
+                new Date(a.created_at) - new Date(b.created_at) ||
+                a.id - b.id
+            );
+        })
+        .flatMap((order) => {
+            const orderDate = new Date(order.created_at);
+            const weekNumber = isoWeekNumber(orderDate);
+            const weekLabel = `Semana ${String(weekNumber).padStart(2, "0")} (${orderDate.getFullYear()})`;
+            return (order.items || []).map((item) => {
+                const actualTotal = item.was_missing
+                    ? "Faltó"
+                    : item.actual_total === null || item.actual_total === undefined
+                        ? "-"
+                        : item.actual_total;
+                const note = [item.was_missing ? "No disponible" : "", item.item_note || ""].filter(Boolean).join(" - ") || "-";
+                return [
+                    weekLabel,
+                    `#${order.id}`,
+                    formatDateTime(order.created_at),
+                    order.client_name || "",
+                    order.client_phone || "",
+                    order.client_address || "",
+                    statusLabel(order.status),
+                    item.product_name,
+                    formatQty(item.quantity),
+                    unitLabel(item.requested_unit),
+                    item.estimated_total,
+                    actualTotal,
+                    note,
+                ];
+            });
+        });
+}
+
+function buildExcelWorkbook(sheets) {
+    return `<?xml version="1.0"?>
+<?mso-application progid="Excel.Sheet"?>
+<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"
+    xmlns:o="urn:schemas-microsoft-com:office:office"
+    xmlns:x="urn:schemas-microsoft-com:office:excel"
+    xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet"
+    xmlns:html="http://www.w3.org/TR/REC-html40">
+    <Styles>
+        <Style ss:ID="header"><Font ss:Bold="1" ss:Color="#FFFFFF"/><Interior ss:Color="#1f6d2d" ss:Pattern="Solid"/></Style>
+    </Styles>
+    ${sheets.map(buildExcelWorksheet).join("\n")}
+</Workbook>`;
+}
+
+function buildExcelWorksheet(sheet) {
+    const rows = sheet.rows.length ? sheet.rows : [[sheet.empty || "Sin datos"]];
+    return `<Worksheet ss:Name="${excelXml(sheet.name).slice(0, 31)}">
+        <Table>
+            <Row>${sheet.columns.map((column) => excelCell(column, "String", "header")).join("")}</Row>
+            ${rows.map((row) => `<Row>${row.map((cell) => excelCell(cell)).join("")}</Row>`).join("\n")}
+        </Table>
+    </Worksheet>`;
+}
+
+function excelCell(value, forcedType, style) {
+    const type = forcedType || (typeof value === "number" && Number.isFinite(value) ? "Number" : "String");
+    const styleAttr = style ? ` ss:StyleID="${style}"` : "";
+    return `<Cell${styleAttr}><Data ss:Type="${type}">${excelXml(value)}</Data></Cell>`;
+}
+
+function excelXml(value) {
+    return String(value ?? "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&apos;");
 }
 
 function buildRepeatSelections(order) {
@@ -4190,6 +4260,31 @@ function formatQty(value) {
         return String(number);
     }
     return number.toFixed(2).replace(/\.?0+$/, "").replace(".", ",");
+}
+
+
+function unitChoicesForProduct(product) {
+    const presentation = normalizePhotoText(product?.presentation || "");
+    const hasKg = /(^|\s)(kg|kgs|kilo|kilos|kilogramo|kilogramos)(\s|$)/.test(presentation);
+    const hasGram = /(^|\s)\d+(?:[,.]\d+)?\s*g(?:r|rs|ramos)?(\s|$)|gramo|gramos/.test(presentation);
+    const hasUnit = /unidad|unidades|malla|mata|bolsa|bandeja|docena|paquete|atado|ramo|caja|frasco|sachet|pack|pieza/.test(presentation);
+
+    if (hasKg && !hasGram && !hasUnit) {
+        return [["kg", "Kg"]];
+    }
+    if (hasGram || hasUnit) {
+        return [["unidad", "Unidad"]];
+    }
+    if (hasKg) {
+        return [["kg", "Kg"]];
+    }
+    return [["kg", "Kg"]];
+}
+
+function normalizeUnitForProduct(value, product) {
+    const normalized = normalizeUnit(value);
+    const choices = unitChoicesForProduct(product).map(([choice]) => choice);
+    return choices.includes(normalized) ? normalized : choices[0] || "kg";
 }
 
 function normalizeUnit(value) {
