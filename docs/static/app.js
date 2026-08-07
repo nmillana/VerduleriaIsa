@@ -1272,7 +1272,8 @@ async function handleClick(event) {
             case "add-product":
             case "increment-product":
             case "decrement-product":
-                updateProductQuantity(actionNode, action);
+            case "remove-product":
+                await updateProductQuantity(actionNode, action);
                 break;
             case "switch-role":
                 await switchRole(actionNode.dataset.role);
@@ -1305,7 +1306,7 @@ function handleInput(event) {
     }
 }
 
-function updateProductQuantity(actionNode, action) {
+async function updateProductQuantity(actionNode, action) {
     const productId = Number(actionNode.dataset.productId || 0);
     const form = actionNode.closest("[data-order-form]");
     if (!productId || !form) {
@@ -1322,7 +1323,9 @@ function updateProductQuantity(actionNode, action) {
     const step = normalizeUnit(unitNode?.value) === "kg" ? 0.5 : 1;
     let next = current;
 
-    if (action === "decrement-product") {
+    if (action === "remove-product") {
+        next = 0;
+    } else if (action === "decrement-product") {
         next = Math.max(0, current - step);
     } else if (current > 0) {
         next = Math.min(MAX_QUANTITY, current + step);
@@ -1333,6 +1336,9 @@ function updateProductQuantity(actionNode, action) {
     input.value = next > 0 ? formatQuantityInputValue(next) : "";
     refreshOrderSummary();
     persistOrderDraft(form);
+    if (next <= 0 && form.classList.contains("cart-review-page")) {
+        await renderCurrentRoute();
+    }
 }
 
 function formatQuantityInputValue(value) {
@@ -2355,6 +2361,7 @@ function renderClientProductCard(product, selection = {}, options = {}) {
                 <select name="unit_${product.id}" aria-label="Unidad ${e(displayName)}" data-unit-input>
                     ${unitChoices.map(([value, label]) => `<option value="${value}" ${selectedUnit === value ? "selected" : ""}>${e(label)}</option>`).join("")}
                 </select>
+                <button class="product-remove-button" type="button" data-action="remove-product" data-product-id="${product.id}" data-remove-product ${hasQuantity ? "" : "hidden"}>Quitar</button>
             </div>
         </div>
     `;
@@ -2497,6 +2504,7 @@ function renderClientCartReviewPage(products, draft) {
                 <select name="unit_${product.id}" aria-label="Unidad ${e(productDisplayName(product))}" data-unit-input>
                     ${unitChoices.map(([value, label]) => `<option value="${value}" ${selectedUnit === value ? "selected" : ""}>${e(label)}</option>`).join("")}
                 </select>
+                <button class="product-remove-button" type="button" data-action="remove-product" data-product-id="${product.id}" data-remove-product>Quitar producto</button>
             </div>
         </div>
     `;
@@ -3104,6 +3112,10 @@ function refreshOrderSummary() {
         const quantitySelector = row?.querySelector("[data-quantity-selector]");
         if (quantitySelector) {
             quantitySelector.hidden = !isSelected;
+        }
+        const removeButton = row?.querySelector("[data-remove-product]");
+        if (removeButton) {
+            removeButton.hidden = !isSelected;
         }
         if (isSelected) {
             selected += 1;

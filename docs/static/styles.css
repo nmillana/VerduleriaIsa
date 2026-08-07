@@ -1953,6 +1953,24 @@ body {
     font-weight: 850;
 }
 
+.product-remove-button {
+    grid-column: 1 / -1;
+    width: 100%;
+    min-height: 28px;
+    padding: 0 0.45rem;
+    border: 0;
+    border-radius: 999px;
+    background: transparent;
+    color: #9a4f10;
+    font-size: 0.74rem;
+    font-weight: 800;
+    text-decoration: underline;
+}
+
+.product-remove-button[hidden] {
+    display: none !important;
+}
+
 .quantity-selector {
     display: grid;
     grid-template-columns: 27px minmax(0, 1fr) 27px;
@@ -3350,6 +3368,13 @@ body {
     display: grid;
     grid-template-columns: minmax(0, 1fr) 104px;
     gap: 0.6rem;
+}
+
+.cart-review-page .product-remove-button {
+    min-height: 36px;
+    border: 1px solid rgba(154, 79, 16, 0.22);
+    background: #fff8ef;
+    text-decoration: none;
 }
 
 .cart-submit-panel {
