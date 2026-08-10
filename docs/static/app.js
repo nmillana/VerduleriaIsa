@@ -1951,8 +1951,11 @@ function renderShell(title, content) {
     const flash = state.flash;
     state.flash = null;
 
+    const routePath = state.route?.path || "";
+    const routeClass = `route-${routePath.replace(/^\/+/, "").replace(/[^a-z0-9]+/gi, "-") || "home"}`;
     const shellClass = [
         "page-shell",
+        routeClass,
         state.role === "client" ? "client-shell" : "",
         state.role ? `role-${state.role}` : "public-shell",
     ].filter(Boolean).join(" ");
@@ -3177,31 +3180,82 @@ function renderAdminConsolidationPage(consolidation, month) {
 function renderAdminMonthlyBillingPage(groups, month) {
     const cards = groups.length
         ? groups.map((group) => renderMonthlyBillingClientCard(group, month)).join("")
-        : `<section class="panel"><p class="muted">No hay clientas mensuales con pedidos en este mes.</p></section>`;
+        : `<section class="panel monthly-empty-panel"><p class="muted">No hay clientas mensuales con pedidos en este mes.</p></section>`;
+    const monthLabel = monthDisplayLabel(month);
+    const pendingTotal = groups.reduce((sum, group) => sum + group.pending_count, 0);
+    const pendingBadge = pendingTotal ? `<span class="monthly-alert-dot">${pendingTotal > 99 ? "99+" : pendingTotal}</span>` : "";
+    const adminName = state.profile?.name || "Isa";
 
     return `
-        <section class="section-head">
-            <div>
-                <p class="eyebrow">Cobro mensual</p>
-                <h1>Clientas mensuales</h1>
-                <p class="muted">El consolidado mensual no incluye productos; solo muestra fecha, monto y total a cancelar.</p>
-            </div>
-            <div class="hero-actions">
-                <form class="month-filter" data-form="admin-monthly-billing-filter">
-                    <input type="month" name="month" value="${e(month)}">
+        <section class="monthly-admin-workspace">
+            <header class="monthly-admin-topbar">
+                <a class="monthly-admin-brand" href="#/admin/dashboard" aria-label="Panel administrador">
+                    <img src="./static/logo-verduleria-isa.png" alt="${e(APP_NAME)}">
+                </a>
+                <span class="monthly-menu-button" aria-hidden="true"><span></span></span>
+                <div class="monthly-admin-titlebar">
+                    <h1>Consolidado mensual</h1>
+                    <p>Resumen de ingresos por mes</p>
+                </div>
+                <form class="monthly-admin-month" data-form="admin-monthly-billing-filter">
+                    <span class="monthly-icon monthly-icon-calendar" aria-hidden="true"></span>
+                    <input type="month" name="month" value="${e(month)}" aria-label="Mes del consolidado">
                     <button class="button ghost" type="submit">Ver mes</button>
                 </form>
-                <a class="button ghost" href="#/admin/consolidado?month=${e(month)}">Cerrar semanas</a>
+                <div class="monthly-admin-user" aria-label="Administradora">
+                    <span class="monthly-icon monthly-icon-bell" aria-hidden="true">${pendingBadge}</span>
+                    <span class="monthly-user-avatar" aria-hidden="true"></span>
+                    <span><strong>${e(adminName)}</strong><small>Administrador</small></span>
+                </div>
+            </header>
+
+            <div class="monthly-admin-layout">
+                <aside class="monthly-admin-sidebar" aria-label="Navegacion administrador">
+                    <nav>
+                        <a href="#/admin/dashboard"><span class="monthly-nav-icon monthly-nav-panel" aria-hidden="true"></span>Panel</a>
+                        <a href="#/admin/pedidos"><span class="monthly-nav-icon monthly-nav-orders" aria-hidden="true"></span>Pedidos</a>
+                        <a class="is-active" href="#/admin/consolidado?month=${e(month)}"><span class="monthly-nav-icon monthly-nav-chart" aria-hidden="true"></span>Consolidado</a>
+                        <a class="is-sub" href="#/admin/consolidado?month=${e(month)}">Resumen</a>
+                        <a class="is-sub is-current" href="#/admin/cobros-mensuales?month=${e(month)}">Mensuales</a>
+                        <a href="#/admin/productos"><span class="monthly-nav-icon monthly-nav-calendar" aria-hidden="true"></span>Productos</a>
+                        <a href="#/admin/clientes"><span class="monthly-nav-icon monthly-nav-clients" aria-hidden="true"></span>Clientes</a>
+                        <button type="button" data-action="logout"><span class="monthly-nav-icon monthly-nav-exit" aria-hidden="true"></span>Salir</button>
+                    </nav>
+                    <div class="monthly-help-card">
+                        <span class="monthly-help-leaf" aria-hidden="true"></span>
+                        <strong>Necesitas ayuda?</strong>
+                        <small>Escribenos por WhatsApp</small>
+                    </div>
+                </aside>
+
+                <main class="monthly-admin-main">
+                    <section class="monthly-admin-heading">
+                        <div>
+                            <p class="eyebrow">Cobro mensual</p>
+                            <h2>Clientes mensuales</h2>
+                            <p class="muted">El consolidado mensual no incluye productos; solo muestra fecha, monto y total a cancelar.</p>
+                        </div>
+                        <div class="monthly-heading-actions">
+                            <span class="monthly-period-pill"><span class="monthly-icon monthly-icon-calendar" aria-hidden="true"></span>${e(monthLabel)}</span>
+                            <a class="button primary monthly-close-button" href="#/admin/consolidado?month=${e(month)}"><span class="monthly-icon monthly-icon-lock" aria-hidden="true"></span>Cerrar semanas</a>
+                        </div>
+                    </section>
+
+                    <section class="monthly-guide-card">
+                        <span class="monthly-guide-icon" aria-hidden="true"></span>
+                        <div>
+                            <h3>Como se usa</h3>
+                            <p>Primero cierra cada semana en el consolidado. Esos pedidos quedan en Comprado con precio fijo.</p>
+                            <p>Al final del mes, envias este resumen simple a cada cliente mensual; el detalle queda en sus boletas semanales y en la app.</p>
+                        </div>
+                        <span class="monthly-guide-illustration" aria-hidden="true"></span>
+                    </section>
+
+                    <section class="monthly-billing-list monthly-billing-list--redesign">
+                        ${cards}
+                    </section>
+                </main>
             </div>
-        </section>
-
-        <section class="panel monthly-billing-note">
-            <h2>Como se usa</h2>
-            <p class="muted">Primero cierra cada semana en el consolidado. Esos pedidos quedan en Comprado con precio fijo. Al final del mes, envias este resumen simple a cada clienta mensual; el detalle queda en sus boletas semanales y en la app.</p>
-        </section>
-
-        <section class="monthly-billing-list">
-            ${cards}
         </section>
     `;
 }
@@ -3214,30 +3268,35 @@ function renderMonthlyBillingClientCard(group, month) {
                 <td class="money-cell">${formatCurrency(order.display_total)}</td>
             </tr>
         `).join("")
-        : `<tr><td colspan="2">Sin pedidos cerrados. Cierra la semana antes de enviar el cobro mensual.</td></tr>`;
+        : `<tr><td colspan="2" class="monthly-empty-row">Sin pedidos cerrados. Cierra la semana antes de enviar el cobro mensual.</td></tr>`;
     const disabled = group.orders.length ? "" : "disabled";
+    const pendingNotice = group.pending_count
+        ? `<div class="monthly-pending-alert"><span class="monthly-alert-icon" aria-hidden="true"></span><p>${group.pending_count} pedido(s) mensual(es) siguen pendientes y no entran al cobro hasta cerrar la semana.</p></div>`
+        : `<div class="monthly-ready-alert"><span class="monthly-ready-icon" aria-hidden="true"></span><p>Listo para enviar el consolidado mensual.</p></div>`;
+
     return `
-        <article class="panel monthly-billing-card">
-            <div class="section-head compact-section-head">
+        <article class="monthly-client-card">
+            <div class="monthly-client-head">
+                <span class="monthly-client-avatar" aria-hidden="true"></span>
                 <div>
-                    <h2>${e(group.client_name)}</h2>
-                    <p class="muted">Clienta #${group.client_id} | ${e(group.client_phone || "Sin telefono")} | ${e(group.client_address || "Sin direccion")}</p>
-                </div>
-                <div class="hero-actions">
-                    <button class="button ghost" type="button" data-action="print-monthly-client" data-client-id="${group.client_id}" data-month="${e(month)}" ${disabled}>Imprimir / PDF</button>
-                    <button class="button primary" type="button" data-action="open-monthly-whatsapp" data-client-id="${group.client_id}" data-month="${e(month)}" ${disabled}>Enviar por WhatsApp</button>
+                    <h3>${e(group.client_name)}</h3>
+                    <p>Cliente #${group.client_id} <span>|</span> ${e(group.client_phone || "Sin telefono")} <span>|</span> ${e(group.client_address || "Sin direccion")}</p>
                 </div>
             </div>
-            ${group.pending_count ? `<div class="notice-banner"><p>${group.pending_count} pedido(s) mensual(es) siguen pendientes y no entran al cobro hasta cerrar la semana.</p></div>` : ""}
+            <div class="monthly-client-actions">
+                <button class="button ghost" type="button" data-action="print-monthly-client" data-client-id="${group.client_id}" data-month="${e(month)}" ${disabled}><span class="monthly-icon monthly-icon-print" aria-hidden="true"></span>Imprimir / PDF</button>
+                <button class="button primary" type="button" data-action="open-monthly-whatsapp" data-client-id="${group.client_id}" data-month="${e(month)}" ${disabled}><span class="monthly-icon monthly-icon-whatsapp" aria-hidden="true"></span>Enviar por WhatsApp</button>
+            </div>
+            ${pendingNotice}
             <div class="monthly-charge-sheet" aria-label="Consolidado mensual de ${e(group.client_name)}">
                 <table class="monthly-charge-table">
                     <thead>
-                        <tr><th colspan="2" class="monthly-charge-name">${e(group.client_name)}</th></tr>
+                        <tr><th colspan="2" class="monthly-charge-name"><span class="monthly-table-leaf" aria-hidden="true"></span>${e(group.client_name)}<span class="monthly-table-leaf" aria-hidden="true"></span></th></tr>
                         <tr><th>Fecha</th><th>Monto</th></tr>
                     </thead>
                     <tbody>${rows}</tbody>
                     <tfoot>
-                        <tr><th>Total</th><td>${formatCurrency(group.total)}</td></tr>
+                        <tr><th>TOTAL A PAGAR</th><td>${formatCurrency(group.total)}</td></tr>
                     </tfoot>
                 </table>
             </div>

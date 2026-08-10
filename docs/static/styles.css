@@ -3998,78 +3998,734 @@ nav.mobile-bottom-nav.client-top-nav.has-admin {
 }
 
 .week-closure-actions .button[disabled],
-.monthly-billing-card .button[disabled] {
+.monthly-client-card .button[disabled] {
     cursor: default;
 }
 
-.monthly-billing-list,
-.monthly-billing-card {
-    display: grid;
-    gap: 1rem;
+.route-admin-cobros-mensuales {
+    width: 100%;
+    padding: 0;
 }
 
-.monthly-billing-note {
-    max-width: none;
+.route-admin-cobros-mensuales > .topbar.admin-topbar-clean {
+    display: none;
 }
 
-.monthly-statement-summary {
+.route-admin-cobros-mensuales .content-shell {
+    gap: 0;
+}
+
+.monthly-admin-workspace {
+    min-height: 100vh;
+    color: #123f2b;
+    background:
+        radial-gradient(circle at 88% 8%, rgba(126, 183, 81, 0.13), transparent 24%),
+        linear-gradient(180deg, #fbfcf9 0%, #f5f8ef 100%);
+}
+
+.monthly-admin-topbar {
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: 248px 54px minmax(240px, 1fr) minmax(360px, auto) auto;
+    align-items: center;
+    gap: 1.35rem;
+    min-height: 88px;
+    padding: 0.85rem 2rem;
+    background: rgba(255, 255, 255, 0.94);
+    border-bottom: 1px solid rgba(18, 74, 47, 0.1);
+    box-shadow: 0 12px 38px rgba(29, 70, 45, 0.08);
+}
+
+.monthly-admin-brand {
+    display: inline-flex;
+    align-items: center;
+    text-decoration: none;
+}
+
+.monthly-admin-brand img {
+    width: 220px;
+    height: 70px;
+    object-fit: contain;
+    object-position: left center;
+}
+
+.monthly-menu-button {
+    display: grid;
+    place-items: center;
+    width: 52px;
+    height: 52px;
+    border: 1px solid rgba(18, 74, 47, 0.12);
+    border-radius: 8px;
+    background: #fff;
+    box-shadow: 0 10px 24px rgba(33, 75, 48, 0.08);
+}
+
+.monthly-menu-button span,
+.monthly-menu-button::before,
+.monthly-menu-button::after {
+    content: "";
+    display: block;
+    width: 18px;
+    height: 2px;
+    border-radius: 999px;
+    background: #176136;
+}
+
+.monthly-menu-button {
+    gap: 4px;
+}
+
+.monthly-admin-titlebar h1 {
+    margin: 0;
+    font-size: 1.45rem;
+    line-height: 1.1;
+    color: #07502b;
+}
+
+.monthly-admin-titlebar p,
+.monthly-admin-user small {
+    display: block;
+    margin: 0.2rem 0 0;
+    color: #5e6b62;
+    font-size: 0.92rem;
+}
+
+.monthly-admin-month {
+    display: grid;
+    grid-template-columns: 22px minmax(210px, 1fr) 116px;
+    align-items: center;
     gap: 0.75rem;
 }
 
-.monthly-statement-summary div {
-    display: grid;
-    gap: 0.25rem;
-    padding: 0.9rem;
-    border: 1px solid rgba(20, 105, 76, 0.1);
+.monthly-admin-month input {
+    min-height: 52px;
     border-radius: 8px;
-    background: linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(248, 246, 240, 0.94));
+    padding-inline: 0.9rem;
+    background: #fff;
+    box-shadow: 0 10px 24px rgba(33, 75, 48, 0.07);
 }
 
-.monthly-statement-summary span {
-    color: var(--muted);
+.monthly-admin-month .button {
+    min-height: 52px;
+    border-radius: 8px;
+}
+
+.monthly-admin-user {
+    display: grid;
+    grid-template-columns: 40px 48px auto;
+    align-items: center;
+    gap: 0.85rem;
+    color: #143f2d;
+}
+
+.monthly-admin-user strong {
+    display: block;
+    line-height: 1.1;
+}
+
+.monthly-user-avatar,
+.monthly-client-avatar,
+.monthly-guide-icon {
+    display: inline-grid;
+    place-items: center;
+    border-radius: 999px;
+    background: linear-gradient(180deg, #e8f5df, #dcefd1);
+    border: 1px solid rgba(97, 160, 57, 0.23);
+}
+
+.monthly-user-avatar {
+    width: 48px;
+    height: 48px;
+}
+
+.monthly-user-avatar::before,
+.monthly-client-avatar::before {
+    content: "";
+    width: 18px;
+    height: 18px;
+    border: 2px solid #176136;
+    border-bottom-color: transparent;
+    border-radius: 999px;
+    box-shadow: 0 16px 0 -7px #176136;
+}
+
+.monthly-icon,
+.monthly-nav-icon {
+    position: relative;
+    display: inline-block;
+    flex: 0 0 auto;
+    width: 20px;
+    height: 20px;
+    color: currentColor;
+}
+
+.monthly-icon-calendar::before,
+.monthly-nav-calendar::before {
+    content: "";
+    position: absolute;
+    inset: 3px 2px 2px;
+    border: 2px solid currentColor;
+    border-radius: 3px;
+}
+
+.monthly-icon-calendar::after,
+.monthly-nav-calendar::after {
+    content: "";
+    position: absolute;
+    left: 5px;
+    right: 5px;
+    top: 8px;
+    height: 2px;
+    background: currentColor;
+}
+
+.monthly-icon-lock::before {
+    content: "";
+    position: absolute;
+    left: 4px;
+    right: 4px;
+    bottom: 2px;
+    height: 12px;
+    border: 2px solid currentColor;
+    border-radius: 3px;
+}
+
+.monthly-icon-lock::after {
+    content: "";
+    position: absolute;
+    left: 7px;
+    top: 1px;
+    width: 6px;
+    height: 8px;
+    border: 2px solid currentColor;
+    border-bottom: 0;
+    border-radius: 8px 8px 0 0;
+}
+
+.monthly-icon-print::before {
+    content: "";
+    position: absolute;
+    left: 3px;
+    right: 3px;
+    top: 7px;
+    height: 8px;
+    border: 2px solid currentColor;
+    border-radius: 3px;
+}
+
+.monthly-icon-print::after {
+    content: "";
+    position: absolute;
+    left: 6px;
+    top: 2px;
+    width: 8px;
+    height: 6px;
+    border: 2px solid currentColor;
+    border-bottom: 0;
+}
+
+.monthly-icon-whatsapp::before {
+    content: "";
+    position: absolute;
+    inset: 2px;
+    border: 2px solid currentColor;
+    border-radius: 999px;
+}
+
+.monthly-icon-whatsapp::after {
+    content: "";
+    position: absolute;
+    left: 6px;
+    top: 5px;
+    width: 7px;
+    height: 9px;
+    border: 2px solid currentColor;
+    border-left: 0;
+    border-top: 0;
+    transform: rotate(26deg);
+}
+
+.monthly-icon-bell::before {
+    content: "";
+    position: absolute;
+    left: 5px;
+    right: 5px;
+    top: 4px;
+    height: 11px;
+    border: 2px solid #145833;
+    border-radius: 10px 10px 5px 5px;
+}
+
+.monthly-icon-bell::after {
+    content: "";
+    position: absolute;
+    left: 8px;
+    bottom: 1px;
+    width: 4px;
+    height: 2px;
+    background: #145833;
+    border-radius: 999px;
+}
+
+.monthly-alert-dot {
+    position: absolute;
+    right: -5px;
+    top: -7px;
+    display: grid;
+    place-items: center;
+    width: 19px;
+    height: 19px;
+    border-radius: 999px;
+    background: #ff7a00;
+    color: #fff;
+    font-size: 0.72rem;
+    font-weight: 800;
+}
+
+.monthly-admin-layout {
+    display: grid;
+    grid-template-columns: 250px minmax(0, 1fr);
+    min-height: calc(100vh - 88px);
+}
+
+.monthly-admin-sidebar {
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    gap: 1.5rem;
+    padding: 2.1rem 1.25rem 1.4rem;
+    background: rgba(255, 255, 255, 0.86);
+    border-right: 1px solid rgba(18, 74, 47, 0.1);
+}
+
+.monthly-admin-sidebar nav {
+    display: grid;
+    gap: 0.72rem;
+}
+
+.monthly-admin-sidebar a,
+.monthly-admin-sidebar button {
+    display: flex;
+    align-items: center;
+    gap: 0.86rem;
+    min-height: 46px;
+    padding: 0.72rem 0.95rem;
+    border: 0;
+    border-radius: 8px;
+    background: transparent;
+    color: #314237;
+    text-decoration: none;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.monthly-admin-sidebar a.is-active,
+.monthly-admin-sidebar a.is-current {
+    color: #07502b;
+    background: linear-gradient(90deg, rgba(126, 183, 81, 0.22), rgba(126, 183, 81, 0.08));
+}
+
+.monthly-admin-sidebar a.is-sub {
+    min-height: 36px;
+    margin-left: 1.5rem;
+    padding-block: 0.42rem;
+    font-size: 0.92rem;
+}
+
+.monthly-admin-sidebar a.is-sub::before {
+    content: "";
+    width: 7px;
+    height: 7px;
+    border-radius: 999px;
+    background: #348b39;
+}
+
+.monthly-nav-panel::before {
+    content: "";
+    position: absolute;
+    inset: 5px 3px 3px;
+    border: 2px solid currentColor;
+    border-radius: 3px;
+}
+
+.monthly-nav-orders::before {
+    content: "";
+    position: absolute;
+    inset: 5px 3px 3px;
+    border: 2px solid currentColor;
+    border-radius: 4px;
+}
+
+.monthly-nav-orders::after {
+    content: "";
+    position: absolute;
+    left: 7px;
+    top: 1px;
+    width: 6px;
+    height: 7px;
+    border: 2px solid currentColor;
+    border-bottom: 0;
+    border-radius: 7px 7px 0 0;
+}
+
+.monthly-nav-chart::before {
+    content: "";
+    position: absolute;
+    left: 3px;
+    bottom: 3px;
+    width: 3px;
+    height: 8px;
+    background: currentColor;
+    box-shadow: 6px -4px 0 currentColor, 12px -9px 0 currentColor;
+    border-radius: 999px;
+}
+
+.monthly-nav-clients::before {
+    content: "";
+    position: absolute;
+    left: 3px;
+    top: 5px;
+    width: 6px;
+    height: 6px;
+    border: 2px solid currentColor;
+    border-radius: 999px;
+    box-shadow: 8px 0 0 -1px transparent, 8px 0 0 0 currentColor;
+}
+
+.monthly-nav-exit::before {
+    content: "";
+    position: absolute;
+    inset: 4px 7px 4px 3px;
+    border: 2px solid currentColor;
+    border-right: 0;
+    border-radius: 3px;
+}
+
+.monthly-nav-exit::after {
+    content: "";
+    position: absolute;
+    right: 2px;
+    top: 9px;
+    width: 10px;
+    height: 2px;
+    background: currentColor;
+    box-shadow: 4px -4px 0 -1px currentColor, 4px 4px 0 -1px currentColor;
+}
+
+.monthly-help-card {
+    display: grid;
+    gap: 0.2rem;
+    padding: 1rem;
+    border: 1px solid rgba(126, 183, 81, 0.25);
+    border-radius: 8px;
+    background: linear-gradient(180deg, rgba(244, 250, 238, 0.96), rgba(255, 255, 255, 0.94));
+    box-shadow: 0 14px 30px rgba(29, 70, 45, 0.07);
+}
+
+.monthly-help-card small {
+    color: #4d6256;
+}
+
+.monthly-help-leaf,
+.monthly-table-leaf {
+    display: inline-block;
+    width: 18px;
+    height: 11px;
+    border-radius: 50% 0 50% 50%;
+    background: #91c85a;
+    transform: rotate(25deg);
+}
+
+.monthly-admin-main {
+    display: grid;
+    gap: 1.15rem;
+    align-content: start;
+    padding: 2rem 2.4rem 2.4rem;
+}
+
+.monthly-admin-heading {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 1rem;
+    align-items: end;
+}
+
+.monthly-admin-heading h2 {
+    margin: 0.1rem 0 0;
+    font-size: 2.15rem;
+    line-height: 1;
+    color: #073f29;
+}
+
+.monthly-admin-heading .muted {
+    max-width: 520px;
+    margin-top: 0.55rem;
+}
+
+.monthly-heading-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.9rem;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+}
+
+.monthly-period-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.65rem;
+    min-height: 52px;
+    padding: 0.75rem 1rem;
+    border: 1px solid rgba(18, 74, 47, 0.12);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.94);
+    box-shadow: 0 10px 24px rgba(33, 75, 48, 0.07);
+    font-weight: 600;
+}
+
+.monthly-close-button {
+    min-height: 52px;
+    border-radius: 8px;
+    padding-inline: 1.35rem;
+}
+
+.monthly-guide-card {
+    display: grid;
+    grid-template-columns: 78px minmax(0, 1fr) 116px;
+    align-items: center;
+    gap: 1.4rem;
+    padding: 1.4rem 1.5rem;
+    border: 1px solid rgba(126, 183, 81, 0.3);
+    border-radius: 8px;
+    background: linear-gradient(90deg, rgba(255, 255, 255, 0.95), rgba(244, 251, 237, 0.88));
+    box-shadow: 0 16px 38px rgba(29, 70, 45, 0.07);
+}
+
+.monthly-guide-icon {
+    width: 74px;
+    height: 74px;
+}
+
+.monthly-guide-icon::before {
+    content: "";
+    width: 30px;
+    height: 34px;
+    border: 3px solid #5b9b33;
+    border-radius: 3px;
+    box-shadow: 14px 0 0 -8px #e8f5df, 14px 0 0 -5px #5b9b33;
+}
+
+.monthly-guide-card h3 {
+    margin: 0 0 0.35rem;
+    color: #0b4d2d;
+    font-size: 1.25rem;
+}
+
+.monthly-guide-card p {
+    margin: 0.16rem 0;
+    color: #32443a;
+}
+
+.monthly-guide-illustration {
+    justify-self: end;
+    width: 104px;
+    height: 80px;
+    border-radius: 999px;
+    background:
+        linear-gradient(90deg, transparent 34%, #5c6b5e 35% 41%, transparent 42%),
+        linear-gradient(#ffffff, #ffffff) 40% 42% / 34px 44px no-repeat,
+        repeating-linear-gradient(180deg, #6fa941 0 3px, transparent 3px 9px) 47% 45% / 20px 34px no-repeat,
+        linear-gradient(180deg, #e6f4d9, #d5ebc5);
+    border: 1px solid rgba(126, 183, 81, 0.25);
+}
+
+.monthly-billing-list,
+.monthly-billing-list--redesign {
+    display: grid;
+    gap: 1.1rem;
+}
+
+.monthly-client-card {
+    display: grid;
+    grid-template-columns: minmax(300px, 0.86fr) minmax(420px, 1fr);
+    grid-template-areas:
+        "client actions"
+        "alert table";
+    gap: 0.9rem 1.5rem;
+    align-items: start;
+    padding: 1.2rem 1.35rem;
+    border: 1px solid rgba(18, 74, 47, 0.1);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.94);
+    box-shadow: 0 16px 38px rgba(29, 70, 45, 0.08);
+}
+
+.monthly-client-head {
+    grid-area: client;
+    display: grid;
+    grid-template-columns: 48px minmax(0, 1fr);
+    gap: 0.9rem;
+    align-items: center;
+}
+
+.monthly-client-avatar {
+    width: 48px;
+    height: 48px;
+}
+
+.monthly-client-head h3 {
+    margin: 0;
+    color: #0b4d2d;
+    font-size: 1.25rem;
+}
+
+.monthly-client-head p {
+    margin-top: 0.15rem;
+    color: #5e6b62;
+    font-size: 0.86rem;
+}
+
+.monthly-client-head span {
+    color: rgba(18, 74, 47, 0.4);
+}
+
+.monthly-client-actions {
+    grid-area: actions;
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.7rem;
+    flex-wrap: wrap;
+}
+
+.monthly-client-actions .button {
+    min-height: 42px;
+    border-radius: 8px;
+    gap: 0.48rem;
+    padding: 0.6rem 1rem;
+}
+
+.monthly-pending-alert,
+.monthly-ready-alert {
+    grid-area: alert;
+    display: grid;
+    grid-template-columns: 32px minmax(0, 1fr);
+    align-items: center;
+    gap: 0.85rem;
+    min-height: 65px;
+    margin-top: 1.25rem;
+    padding: 0.85rem 1rem;
+    border-radius: 8px;
+}
+
+.monthly-pending-alert {
+    background: linear-gradient(90deg, rgba(255, 247, 229, 0.98), rgba(255, 252, 243, 0.94));
+    border: 1px solid rgba(238, 155, 56, 0.18);
+    color: #1f2c25;
+}
+
+.monthly-ready-alert {
+    background: linear-gradient(90deg, rgba(235, 248, 226, 0.98), rgba(250, 253, 247, 0.94));
+    border: 1px solid rgba(126, 183, 81, 0.18);
+    color: #17442d;
+}
+
+.monthly-pending-alert p,
+.monthly-ready-alert p {
+    margin: 0;
+    font-weight: 600;
     font-size: 0.9rem;
+    line-height: 1.35;
 }
 
-.monthly-statement-summary strong {
-    color: var(--accent-deep);
-    font-size: 1.3rem;
+.monthly-alert-icon,
+.monthly-ready-icon {
+    position: relative;
+    display: inline-grid;
+    place-items: center;
+    width: 28px;
+    height: 28px;
+    border-radius: 999px;
 }
 
-.monthly-statement-table {
-    margin-top: 0.2rem;
+.monthly-alert-icon::before {
+    content: "";
+    width: 0;
+    height: 0;
+    border-left: 11px solid transparent;
+    border-right: 11px solid transparent;
+    border-bottom: 20px solid #ff7a00;
+}
+
+.monthly-alert-icon::after {
+    content: "!";
+    position: absolute;
+    top: 5px;
+    color: white;
+    font-size: 0.76rem;
+    font-weight: 800;
+}
+
+.monthly-ready-icon {
+    border: 2px solid #348b39;
+}
+
+.monthly-ready-icon::before {
+    content: "";
+    width: 10px;
+    height: 6px;
+    border-left: 2px solid #348b39;
+    border-bottom: 2px solid #348b39;
+    transform: rotate(-45deg);
 }
 
 .monthly-charge-sheet {
+    grid-area: table;
     overflow-x: auto;
-    padding: 0.2rem 0 0;
+    padding: 0;
 }
 
 .monthly-charge-table {
-    width: min(420px, 100%);
+    width: min(520px, 100%);
+    margin-left: auto;
     border-collapse: collapse;
-    background: #fff;
-    color: #111;
-    font-size: 1rem;
+    background: rgba(255, 255, 255, 0.86);
+    color: #153b2a;
+    font-size: 0.92rem;
     line-height: 1.2;
+    border: 1px dashed rgba(126, 183, 81, 0.58);
+    border-radius: 8px;
+    overflow: hidden;
 }
 
 .monthly-charge-table th,
 .monthly-charge-table td {
-    border: 1px solid #111;
-    padding: 0.38rem 0.55rem;
-    text-align: center;
+    border-bottom: 1px solid rgba(126, 183, 81, 0.22);
+    padding: 0.52rem 0.75rem;
+    text-align: left;
     vertical-align: middle;
 }
 
+.monthly-charge-table th:last-child,
+.monthly-charge-table td:last-child {
+    text-align: right;
+}
+
 .monthly-charge-table thead th {
+    color: #0b4d2d;
     font-weight: 700;
 }
 
 .monthly-charge-name {
-    font-size: 1.02rem;
-    font-weight: 700;
+    text-align: center !important;
+    font-size: 0.98rem;
+    color: #153b2a;
+    background: rgba(250, 253, 247, 0.72);
+}
+
+.monthly-charge-name .monthly-table-leaf {
+    width: 12px;
+    height: 8px;
+    margin: 0 0.6rem;
+    vertical-align: middle;
 }
 
 .monthly-charge-table .money-cell,
@@ -4077,10 +4733,17 @@ nav.mobile-bottom-nav.client-top-nav.has-admin {
     white-space: nowrap;
 }
 
+.monthly-empty-row {
+    text-align: center !important;
+    color: #42534a;
+    line-height: 1.35;
+}
+
 .monthly-charge-table tfoot th,
 .monthly-charge-table tfoot td {
-    background: #fff200;
-    color: #e00000;
+    background: #edf7e7;
+    color: #24752f;
+    border-bottom: 0;
     font-weight: 800;
 }
 
@@ -4094,29 +4757,215 @@ nav.mobile-bottom-nav.client-top-nav.has-admin {
     padding: 1.5rem;
 }
 
-@media (max-width: 720px) {
-    .week-closure-actions {
-        display: grid;
-        padding: 0 0.72rem 0.72rem;
+.monthly-empty-panel {
+    background: rgba(255, 255, 255, 0.94);
+}
+
+@media (max-width: 1180px) {
+    .monthly-admin-topbar {
+        grid-template-columns: 190px 48px minmax(190px, 1fr);
     }
 
-    .week-closure-actions .button,
-    .monthly-billing-card .hero-actions .button {
+    .monthly-admin-brand img {
+        width: 176px;
+    }
+
+    .monthly-admin-month,
+    .monthly-admin-user {
+        grid-column: span 3;
+        justify-self: start;
+    }
+
+    .monthly-admin-layout {
+        grid-template-columns: 210px minmax(0, 1fr);
+    }
+
+    .monthly-client-card {
+        grid-template-columns: minmax(0, 1fr);
+        grid-template-areas:
+            "client"
+            "actions"
+            "alert"
+            "table";
+    }
+
+    .monthly-client-actions,
+    .monthly-charge-table {
+        justify-content: flex-start;
+        margin-left: 0;
+    }
+}
+
+@media (max-width: 820px) {
+    .route-admin-cobros-mensuales {
         width: 100%;
     }
 
-    .monthly-statement-summary {
+    .monthly-admin-topbar {
+        grid-template-columns: 126px 44px minmax(0, 1fr);
+        gap: 0.65rem;
+        padding: 0.75rem;
+    }
+
+    .monthly-admin-brand img {
+        width: 118px;
+        height: 58px;
+    }
+
+    .monthly-admin-titlebar h1 {
+        font-size: 1.05rem;
+    }
+
+    .monthly-admin-titlebar p,
+    .monthly-admin-user {
+        display: none;
+    }
+
+    .monthly-admin-month {
+        grid-column: 1 / -1;
+        grid-template-columns: 20px minmax(0, 1fr) 92px;
+        width: 100%;
+    }
+
+    .monthly-admin-layout {
         grid-template-columns: 1fr;
-        gap: 0.55rem;
     }
 
-    .monthly-statement-summary div {
-        grid-template-columns: minmax(0, 1fr) auto;
-        align-items: center;
-        padding: 0.72rem 0.82rem;
+    .monthly-admin-sidebar {
+        position: sticky;
+        top: 0;
+        z-index: 2;
+        display: block;
+        padding: 0.55rem 0.75rem;
+        border-right: 0;
+        border-bottom: 1px solid rgba(18, 74, 47, 0.1);
+        overflow-x: auto;
     }
 
-    .monthly-statement-summary strong {
-        font-size: 1.1rem;
+    .monthly-admin-sidebar nav {
+        display: flex;
+        gap: 0.45rem;
+        min-width: max-content;
+    }
+
+    .monthly-admin-sidebar a,
+    .monthly-admin-sidebar button,
+    .monthly-admin-sidebar a.is-sub {
+        min-height: 38px;
+        margin: 0;
+        padding: 0.45rem 0.68rem;
+        font-size: 0.82rem;
+        white-space: nowrap;
+    }
+
+    .monthly-admin-sidebar a.is-sub::before,
+    .monthly-help-card {
+        display: none;
+    }
+
+    .monthly-admin-main {
+        padding: 1rem 0.72rem 1.4rem;
+    }
+
+    .monthly-admin-heading {
+        grid-template-columns: 1fr;
+        align-items: start;
+    }
+
+    .monthly-admin-heading h2 {
+        font-size: 1.65rem;
+    }
+
+    .monthly-heading-actions {
+        justify-content: stretch;
+    }
+
+    .monthly-period-pill,
+    .monthly-close-button {
+        flex: 1 1 160px;
+        min-height: 44px;
+    }
+
+    .monthly-guide-card {
+        grid-template-columns: 50px minmax(0, 1fr);
+        gap: 0.85rem;
+        padding: 1rem;
+    }
+
+    .monthly-guide-icon {
+        width: 50px;
+        height: 50px;
+    }
+
+    .monthly-guide-icon::before {
+        transform: scale(0.7);
+    }
+
+    .monthly-guide-illustration {
+        display: none;
+    }
+
+    .monthly-client-card {
+        padding: 0.9rem;
+        gap: 0.75rem;
+    }
+
+    .monthly-client-head {
+        grid-template-columns: 42px minmax(0, 1fr);
+    }
+
+    .monthly-client-avatar {
+        width: 42px;
+        height: 42px;
+    }
+
+    .monthly-client-actions .button,
+    .monthly-client-actions {
+        width: 100%;
+    }
+
+    .monthly-pending-alert,
+    .monthly-ready-alert {
+        margin-top: 0;
+        min-height: 54px;
+    }
+
+    .monthly-charge-table {
+        width: 100%;
+        font-size: 0.84rem;
+    }
+}
+
+@media (max-width: 430px) {
+    .monthly-admin-topbar {
+        grid-template-columns: 100px 38px minmax(0, 1fr);
+        padding: 0.55rem;
+    }
+
+    .monthly-menu-button {
+        width: 38px;
+        height: 38px;
+    }
+
+    .monthly-admin-brand img {
+        width: 96px;
+        height: 48px;
+    }
+
+    .monthly-admin-month {
+        grid-template-columns: 1fr;
+    }
+
+    .monthly-admin-month .monthly-icon {
+        display: none;
+    }
+
+    .monthly-client-head p {
+        font-size: 0.78rem;
+    }
+
+    .monthly-charge-table th,
+    .monthly-charge-table td {
+        padding: 0.46rem 0.52rem;
     }
 }
