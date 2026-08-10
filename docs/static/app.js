@@ -3184,7 +3184,7 @@ function renderAdminMonthlyBillingPage(groups, month) {
             <div>
                 <p class="eyebrow">Cobro mensual</p>
                 <h1>Clientas mensuales</h1>
-                <p class="muted">El consolidado mensual no incluye productos; solo muestra pedido, semana y monto total a cancelar.</p>
+                <p class="muted">El consolidado mensual no incluye productos; solo muestra fecha, monto y total a cancelar.</p>
             </div>
             <div class="hero-actions">
                 <form class="month-filter" data-form="admin-monthly-billing-filter">
@@ -3196,8 +3196,8 @@ function renderAdminMonthlyBillingPage(groups, month) {
         </section>
 
         <section class="panel monthly-billing-note">
-            <h2>Cómo se usa</h2>
-            <p class="muted">Primero cierra cada semana en el consolidado. Esos pedidos quedan en Comprado con precio fijo. Al final del mes, envías este resumen a cada clienta mensual; el detalle queda en sus boletas semanales y en la app.</p>
+            <h2>Como se usa</h2>
+            <p class="muted">Primero cierra cada semana en el consolidado. Esos pedidos quedan en Comprado con precio fijo. Al final del mes, envias este resumen simple a cada clienta mensual; el detalle queda en sus boletas semanales y en la app.</p>
         </section>
 
         <section class="monthly-billing-list">
@@ -3210,43 +3210,40 @@ function renderMonthlyBillingClientCard(group, month) {
     const rows = group.orders.length
         ? group.orders.map((order) => `
             <tr>
-                <td>${e(weekLabelForDate(order.created_at))}</td>
-                <td>#${order.id}</td>
-                <td>${e(formatDateOnly(order.created_at))}</td>
-                <td><span class="status-pill" data-status="${e(order.status)}">${e(statusLabel(order.status))}</span></td>
-                <td>${formatCurrency(order.display_total)}</td>
+                <td>${e(formatDateNumeric(order.created_at))}</td>
+                <td class="money-cell">${formatCurrency(order.display_total)}</td>
             </tr>
         `).join("")
-        : `<tr><td colspan="5">Sin pedidos cerrados. Cierra la semana antes de enviar el cobro mensual.</td></tr>`;
+        : `<tr><td colspan="2">Sin pedidos cerrados. Cierra la semana antes de enviar el cobro mensual.</td></tr>`;
     const disabled = group.orders.length ? "" : "disabled";
     return `
         <article class="panel monthly-billing-card">
             <div class="section-head compact-section-head">
                 <div>
                     <h2>${e(group.client_name)}</h2>
-                    <p class="muted">Clienta #${group.client_id} · ${e(group.client_phone || "Sin teléfono")} · ${e(group.client_address || "Sin dirección")}</p>
+                    <p class="muted">Clienta #${group.client_id} | ${e(group.client_phone || "Sin telefono")} | ${e(group.client_address || "Sin direccion")}</p>
                 </div>
                 <div class="hero-actions">
                     <button class="button ghost" type="button" data-action="print-monthly-client" data-client-id="${group.client_id}" data-month="${e(month)}" ${disabled}>Imprimir / PDF</button>
                     <button class="button primary" type="button" data-action="open-monthly-whatsapp" data-client-id="${group.client_id}" data-month="${e(month)}" ${disabled}>Enviar por WhatsApp</button>
                 </div>
             </div>
-            <div class="monthly-statement-summary">
-                <div><span>Pedidos cerrados</span><strong>${group.orders.length}</strong></div>
-                <div><span>Total mensual</span><strong>${formatCurrency(group.total)}</strong></div>
-                <div><span>Total a cancelar</span><strong>${formatCurrency(group.total_due)}</strong></div>
-            </div>
             ${group.pending_count ? `<div class="notice-banner"><p>${group.pending_count} pedido(s) mensual(es) siguen pendientes y no entran al cobro hasta cerrar la semana.</p></div>` : ""}
-            <table class="data-table monthly-statement-table">
-                <thead>
-                    <tr><th>Semana</th><th>Pedido</th><th>Fecha</th><th>Estado</th><th>Monto</th></tr>
-                </thead>
-                <tbody>${rows}</tbody>
-            </table>
+            <div class="monthly-charge-sheet" aria-label="Consolidado mensual de ${e(group.client_name)}">
+                <table class="monthly-charge-table">
+                    <thead>
+                        <tr><th colspan="2" class="monthly-charge-name">${e(group.client_name)}</th></tr>
+                        <tr><th>Fecha</th><th>Monto</th></tr>
+                    </thead>
+                    <tbody>${rows}</tbody>
+                    <tfoot>
+                        <tr><th>Total</th><td>${formatCurrency(group.total)}</td></tr>
+                    </tfoot>
+                </table>
+            </div>
         </article>
     `;
 }
-
 
 function renderLoadingCard(message) {
     return `
@@ -3940,15 +3937,10 @@ async function buildMonthlyStatementPdfBlob(client, month, orders) {
     const PdfConstructor = pdfConstructor();
     const doc = new PdfConstructor({ orientation: "portrait", unit: "mm", format: "a4", compress: true });
     const statementOrders = monthlyStatementOrders(orders);
-    const total = statementOrders.reduce((sum, order) => sum + order.display_total, 0);
-    const totalDue = statementOrders.reduce((sum, order) => sum + (order.status === "pagado" ? 0 : order.display_total), 0);
     const page = { width: 210, height: 297 };
-    const margin = 10;
     const green = [24, 86, 55];
-    const softGreen = [238, 248, 231];
-    const leafGreen = [112, 168, 58];
     const orange = [242, 112, 16];
-    const border = [184, 216, 153];
+    const red = [220, 0, 0];
 
     doc.setProperties({
         title: `Cobro mensual ${month} | ${APP_NAME}`,
@@ -3957,104 +3949,56 @@ async function buildMonthlyStatementPdfBlob(client, month, orders) {
     });
     doc.setFillColor(255, 255, 255);
     doc.rect(0, 0, page.width, page.height, "F");
-    doc.setFillColor(248, 252, 243);
-    doc.circle(198, 278, 38, "F");
 
     try {
         const logo = await getReceiptLogoDataUrl();
-        doc.addImage(logo, "PNG", margin, 7, 62, 42, undefined, "FAST");
+        doc.addImage(logo, "PNG", 82, 16, 46, 31, undefined, "FAST");
     } catch (error) {
         console.warn("No pude cargar el logo para el PDF mensual.", error);
         setPdfFont(doc, 16, "bold", green);
-        doc.text(APP_NAME, margin, 24);
+        doc.text(APP_NAME, page.width / 2, 28, { align: "center" });
     }
 
-    setPdfFont(doc, 24, "bold", green);
-    doc.text("Cobro mensual", 122, 22);
-    setPdfFont(doc, 10.5, "normal", [61, 82, 70]);
-    doc.text(monthDisplayLabel(month), 122, 31);
-    doc.setDrawColor(...orange);
-    doc.setLineWidth(1);
-    doc.line(143, 37, 162, 37);
-
-    drawRoundedPanel(doc, margin, 55, page.width - margin * 2, 24, 4, border, [255, 255, 255]);
-    setPdfFont(doc, 12, "bold", green);
-    doc.text(client.name || `Clienta #${client.id}`, margin + 6, 65);
-    setPdfFont(doc, 8.8, "normal", [31, 47, 41]);
-    doc.text(fitPdfText(doc, [client.phone, client.address].filter(Boolean).join(" | ") || "Datos de contacto no informados", page.width - margin * 2 - 12), margin + 6, 73);
-
-    drawRoundedPanel(doc, margin, 88, page.width - margin * 2, 41, 4, border, [255, 255, 255]);
-    const cardGap = 5;
-    const cardW = (page.width - margin * 2 - 16 - cardGap * 2) / 3;
-    const cards = [
-        ["Pedidos cerrados", String(statementOrders.length), green],
-        ["Total mensual", formatCurrency(total), green],
-        ["Total a cancelar", formatCurrency(totalDue), orange],
-    ];
-    cards.forEach((card, index) => {
-        const x = margin + 6 + index * (cardW + cardGap);
-        drawRoundedPanel(doc, x, 96, cardW, 24, 3.5, border, [255, 254, 251]);
-        setPdfFont(doc, 13, "bold", card[2]);
-        doc.text(card[1], x + 5, 105);
-        setPdfFont(doc, 8, "normal", [31, 47, 41]);
-        doc.text(card[0], x + 5, 114);
-    });
-
-    drawMonthlyStatementTable(doc, margin, 142, page.width - margin * 2, statementOrders, green, softGreen, border);
-    drawReceiptFooter(doc, margin, 273, page.width - margin * 2, green, orange, leafGreen);
+    setPdfFont(doc, 10, "bold", orange);
+    doc.text(monthDisplayLabel(month).toUpperCase(), page.width / 2, 54, { align: "center" });
+    drawMonthlyStatementTable(doc, 54, 64, 102, client.name || `Clienta #${client.id}`, statementOrders, green, red);
     return doc.output("blob");
 }
 
-function drawMonthlyStatementTable(doc, x, y, width, orders, green, softGreen, border) {
-    const rowH = 10;
-    const headerH = 9;
-    const height = Math.max(45, headerH + rowH * Math.max(orders.length, 1) + 16);
-    drawRoundedPanel(doc, x, y, width, Math.min(height, 120), 4, border, [255, 255, 255]);
-    setPdfFont(doc, 13, "bold", green);
-    doc.text("Resumen por semana", x + 6, y + 10);
+function drawMonthlyStatementTable(doc, x, y, width, clientName, orders, green, red) {
+    const colW = width / 2;
+    const rowH = 9;
+    const total = orders.reduce((sum, order) => sum + order.display_total, 0);
+    const rows = orders.length
+        ? orders.map((order) => [formatDateNumeric(order.created_at), formatCurrency(order.display_total)])
+        : [["Sin pedidos", "-"]];
+    const tableRows = [[clientName, "__merge"], ["Fecha", "Monto"], ...rows, ["Total", formatCurrency(total)]];
 
-    const tableX = x + 5;
-    const tableY = y + 17;
-    const tableW = width - 10;
-    const columns = [
-        ["Semana", 45],
-        ["Pedido", 25],
-        ["Fecha", 42],
-        ["Estado", 31],
-        ["Monto", tableW - 143],
-    ];
+    doc.setDrawColor(0, 0, 0);
+    doc.setLineWidth(0.25);
+    let currentY = y;
 
-    doc.setFillColor(42, 111, 40);
-    doc.roundedRect(tableX, tableY, tableW, headerH, 2.5, 2.5, "F");
-    setPdfFont(doc, 7.5, "bold", [255, 255, 255]);
-    let currentX = tableX;
-    columns.forEach(([label, colW]) => {
-        doc.text(label, currentX + 2.2, tableY + 5.6);
-        currentX += colW;
-    });
+    tableRows.forEach((row, index) => {
+        const isName = index === 0;
+        const isHeader = index === 1;
+        const isTotal = index === tableRows.length - 1;
+        if (isTotal) {
+            doc.setFillColor(255, 247, 0);
+            doc.rect(x, currentY, width, rowH, "F");
+        }
+        doc.rect(x, currentY, width, rowH);
+        if (!isName) {
+            doc.line(x + colW, currentY, x + colW, currentY + rowH);
+        }
 
-    if (!orders.length) {
-        setPdfFont(doc, 8, "normal", [31, 47, 41]);
-        doc.text("Sin pedidos cerrados para este mes.", tableX + 3, tableY + headerH + 8);
-        return;
-    }
-
-    let rowY = tableY + headerH;
-    orders.forEach((order, index) => {
-        doc.setFillColor(index % 2 ? 252 : 255, index % 2 ? 254 : 255, index % 2 ? 249 : 255);
-        doc.rect(tableX, rowY, tableW, rowH, "F");
-        doc.setDrawColor(221, 235, 205);
-        doc.line(tableX, rowY, tableX + tableW, rowY);
-        const values = [weekLabelForDate(order.created_at), `#${order.id}`, formatDateOnly(order.created_at), statusLabel(order.status), formatCurrency(order.display_total)];
-        let textX = tableX;
-        columns.forEach(([, colW], colIndex) => {
-            const align = colIndex === 4 ? "right" : "left";
-            const drawX = align === "right" ? textX + colW - 2.2 : textX + 2.2;
-            setPdfFont(doc, 7.6, colIndex === 4 ? "bold" : "normal", colIndex === 4 ? green : [31, 47, 41]);
-            doc.text(fitPdfText(doc, values[colIndex], colW - 4), drawX, rowY + 6.5, { align });
-            textX += colW;
-        });
-        rowY += rowH;
+        setPdfFont(doc, isName ? 11 : 10, isName || isHeader || isTotal ? "bold" : "normal", isTotal ? red : [0, 0, 0]);
+        if (isName) {
+            doc.text(row[0] || "Clienta", x + width / 2, currentY + 6.2, { align: "center" });
+        } else {
+            doc.text(row[0], x + colW / 2, currentY + 6.2, { align: "center" });
+            doc.text(row[1], x + colW + colW / 2, currentY + 6.2, { align: "center" });
+        }
+        currentY += rowH;
     });
 }
 
@@ -4269,14 +4213,15 @@ function monthlyStatementFilename(client, month) {
 
 function monthlyStatementWhatsappMessage(client, month, orders) {
     const statementOrders = monthlyStatementOrders(orders);
-    const totalDue = statementOrders.reduce((sum, order) => sum + (order.status === "pagado" ? 0 : order.display_total), 0);
+    const total = statementOrders.reduce((sum, order) => sum + order.display_total, 0);
+    const rows = statementOrders.map((order) => `${formatDateNumeric(order.created_at)} | ${formatCurrency(order.display_total)}`);
     return [
-        `Hola ${client.name || ""},`,
-        `te comparto el consolidado mensual de ${monthDisplayLabel(month)} de Verdulería Isa.`,
-        `Incluye ${statementOrders.length} pedido(s) cerrado(s).`,
-        `Total a cancelar: ${formatCurrency(totalDue)}.`,
+        `${client.name || "Clienta"}`,
+        "Fecha | Monto",
+        ...rows,
+        `Total | ${formatCurrency(total)}`,
         "",
-        "El detalle de cada semana está en tus boletas y en la app.",
+        `Consolidado mensual ${monthDisplayLabel(month)} - Verduleria Isa.`,
     ].join("\n").trim();
 }
 
@@ -4411,45 +4356,27 @@ function renderReceiptOrderItemRows(items = []) {
 }
 
 function buildMonthlyPrintMarkup(client, month, orders) {
-    const dashboard = buildClientDashboard(orders);
+    const statementOrders = monthlyStatementOrders(orders);
+    const total = statementOrders.reduce((sum, order) => sum + order.display_total, 0);
+    const rows = statementOrders.length
+        ? statementOrders.map((order) => `
+            <tr>
+                <td>${e(formatDateNumeric(order.created_at))}</td>
+                <td>${formatCurrency(order.display_total)}</td>
+            </tr>
+        `).join("")
+        : `<tr><td colspan="2">Sin pedidos cerrados para este mes.</td></tr>`;
     return `
-        <div class="print-sheet">
-            <h1>Resumen mensual</h1>
-            <p>Clienta: ${e(client.name)} | Mes: ${e(month)}</p>
-            <p>${e(client.email)} | ${e(client.address)}</p>
-            <div class="print-sheet__summary">
-                <div class="print-sheet__card">
-                    <strong>${formatCurrency(dashboard.summary.monthly_total)}</strong>
-                    <p>Gasto del mes</p>
-                </div>
-                <div class="print-sheet__card">
-                    <strong>${dashboard.summary.order_count}</strong>
-                    <p>Pedidos</p>
-                </div>
-                <div class="print-sheet__card">
-                    <strong>${formatCurrency(dashboard.summary.average_ticket)}</strong>
-                    <p>Ticket promedio</p>
-                </div>
-            </div>
-            <table>
+        <div class="print-sheet monthly-print-sheet">
+            <table class="monthly-charge-table monthly-charge-table--print">
                 <thead>
-                    <tr>
-                        <th>Pedido</th>
-                        <th>Fecha</th>
-                        <th>Estado</th>
-                        <th>Total</th>
-                    </tr>
+                    <tr><th colspan="2" class="monthly-charge-name">${e(client.name || "Clienta")}</th></tr>
+                    <tr><th>Fecha</th><th>Monto</th></tr>
                 </thead>
-                <tbody>
-                    ${orders.map((order) => `
-                        <tr>
-                            <td>#${order.id}</td>
-                            <td>${e(formatDateTime(order.created_at))}</td>
-                            <td>${e(statusLabel(order.status))}</td>
-                            <td>${formatCurrency(order.display_total)}</td>
-                        </tr>
-                    `).join("")}
-                </tbody>
+                <tbody>${rows}</tbody>
+                <tfoot>
+                    <tr><th>Total</th><td>${formatCurrency(total)}</td></tr>
+                </tfoot>
             </table>
         </div>
     `;
@@ -4766,6 +4693,19 @@ function formatDateOnly(value) {
         return "-";
     }
     return new Date(value).toLocaleDateString("es-CL", { dateStyle: "medium" });
+}
+
+function formatDateNumeric(value) {
+    if (!value) {
+        return "-";
+    }
+    const date = new Date(value);
+    if (!Number.isFinite(date.getTime())) {
+        return "-";
+    }
+    const day = String(date.getDate()).padStart(2, "0");
+    const month = String(date.getMonth() + 1).padStart(2, "0");
+    return `${day}-${month}-${date.getFullYear()}`;
 }
 
 function monthDisplayLabel(month) {

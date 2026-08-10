@@ -1,4 +1,4 @@
-const CACHE_NAME = "verduleria-isa-pwa-v20260810-weekly-monthly-close";
+const CACHE_NAME = "verduleria-isa-pwa-v20260810-monthly-simple-table";
 
 self.addEventListener("install", (event) => {
     self.skipWaiting();
