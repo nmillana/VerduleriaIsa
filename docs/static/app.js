@@ -1763,40 +1763,14 @@ async function openWhatsAppForMonthlyStatement(clientId, month) {
     const { client, orders } = await fetchAdminMonthlyStatement(clientId, month);
     const phone = formatPhoneInternational(client.phone || "");
     if (!phone) {
-        throw new Error("La clienta no tiene un número válido para WhatsApp.");
+        throw new Error("La clienta no tiene un numero valido para WhatsApp.");
     }
 
-    const pdfBlob = await buildMonthlyStatementPdfBlob(client, month, orders);
-    const filename = monthlyStatementFilename(client, month);
     const text = monthlyStatementWhatsappMessage(client, month, orders);
-    const pdfFile = typeof File === "function"
-        ? new File([pdfBlob], filename, { type: "application/pdf" })
-        : null;
-
-    if (pdfFile && canSharePdfFile(pdfFile)) {
-        try {
-            await navigator.share({
-                title: `Cobro mensual ${month} | ${APP_NAME}`,
-                text,
-                files: [pdfFile],
-            });
-            return;
-        } catch (error) {
-            if (error?.name === "AbortError") {
-                return;
-            }
-            console.warn("No pude compartir el consolidado mensual directamente.", error);
-        }
-    }
-
-    const fallbackText = `${text}
-
-Nota: este navegador no permite adjuntar el PDF automáticamente. En el celular, usa Compartir y elige WhatsApp para enviarlo sin guardar.`;
-    const url = `https://wa.me/${phone}?text=${encodeURIComponent(fallbackText)}`;
-    window.open(url, "_blank", "noopener") || (window.location.href = url);
+    openWhatsAppDirect(phone, text);
     state.flash = {
         tone: "notice",
-        message: "WhatsApp no permite adjuntar PDFs automáticamente en este navegador. En el celular, usa Compartir y elige WhatsApp para enviar el consolidado PDF sin guardarlo.",
+        message: "Abri WhatsApp directo al contacto. Si necesitas adjuntar el PDF, genera el archivo con Imprimir / PDF y compartelo desde WhatsApp.",
     };
     await renderCurrentRoute();
 }
@@ -1941,45 +1915,19 @@ async function openWhatsAppForOrder(orderId) {
     await refreshPendingOrderPricing(orderId);
     const order = await fetchOrderById(orderId, { includeClient: true });
     if (!order) {
-        throw new Error("No encontré el pedido.");
+        throw new Error("No encontre el pedido.");
     }
 
     const phone = formatPhoneInternational(order.client_phone || "");
     if (!phone) {
-        throw new Error("La clienta no tiene un número válido para WhatsApp.");
+        throw new Error("La clienta no tiene un numero valido para WhatsApp.");
     }
 
-    const pdfBlob = await buildOrderPdfBlob(order, true);
-    const filename = orderPdfFilename(order);
     const text = orderWhatsappMessage(order);
-    const pdfFile = typeof File === "function"
-        ? new File([pdfBlob], filename, { type: "application/pdf" })
-        : null;
-
-    if (pdfFile && canSharePdfFile(pdfFile)) {
-        try {
-            await navigator.share({
-                title: `Pedido #${order.id} | ${APP_NAME}`,
-                text,
-                files: [pdfFile],
-            });
-            return;
-        } catch (error) {
-            if (error?.name === "AbortError") {
-                return;
-            }
-            console.warn("No pude compartir el PDF directamente.", error);
-        }
-    }
-
-    const fallbackText = `${text}
-
-Nota: este navegador no permite adjuntar el PDF automáticamente. Para enviarlo sin guardar, abre esta app desde el celular y comparte con WhatsApp instalado.`;
-    const url = `https://wa.me/${phone}?text=${encodeURIComponent(fallbackText)}`;
-    window.open(url, "_blank", "noopener") || (window.location.href = url);
+    openWhatsAppDirect(phone, text);
     state.flash = {
         tone: "notice",
-        message: "WhatsApp no permite adjuntar PDFs automáticamente en este navegador. En el celular, usa Compartir y elige WhatsApp para enviar la boleta PDF sin guardarla.",
+        message: "Abri WhatsApp directo al contacto. Si necesitas adjuntar el PDF, genera la boleta con Imprimir / PDF y compartela desde WhatsApp.",
     };
     await renderCurrentRoute();
 }
@@ -3094,7 +3042,7 @@ function renderAdminOrderDetailPage(order) {
                 <p class="muted">${e(order.client_name)} | ${e(order.client_email)} | ${e(order.client_phone)}</p>
             </div>
             <div class="hero-actions">
-                <button class="button ghost" type="button" data-action="open-whatsapp" data-order-id="${order.id}">Enviar PDF por WhatsApp</button>
+                <button class="button ghost" type="button" data-action="open-whatsapp" data-order-id="${order.id}">Enviar por WhatsApp</button>
                 <button class="button ghost" type="button" data-action="print-order" data-order-id="${order.id}">Imprimir / PDF</button>
                 <a class="button ghost" href="#/admin/pedidos">Volver</a>
             </div>
@@ -4513,13 +4461,12 @@ function orderPdfFilename(order) {
 function orderWhatsappMessage(order) {
     return [
         `Hola ${order.client_name || ""},`,
-        `te comparto la boleta PDF del pedido #${order.id} de Verdulería Isa.`,
+        `te comparto el resumen del pedido #${order.id} de Verduleria Isa.`,
         `Total final o proyectado: ${formatCurrency(order.display_total)}.`,
         "",
-        "Adjunto la boleta en PDF con el detalle del pedido.",
+        "La boleta PDF queda disponible desde el boton Imprimir / PDF en la app.",
     ].join("\n").trim();
 }
-
 
 function monthlyStatementFilename(client, month) {
     return `Cobro_mensual_${month}_${productImageSlug(client.name || `clienta_${client.id}`)}_Verduleria_Isa.pdf`;
@@ -4539,12 +4486,13 @@ function monthlyStatementWhatsappMessage(client, month, orders) {
     ].join("\n").trim();
 }
 
-function canSharePdfFile(file) {
-    try {
-        return Boolean(navigator.share && navigator.canShare && navigator.canShare({ files: [file] }));
-    } catch (error) {
-        return false;
+function openWhatsAppDirect(phone, text) {
+    const cleanPhone = String(phone || "").replace(/\D/g, "");
+    if (!cleanPhone) {
+        throw new Error("La clienta no tiene un numero valido para WhatsApp.");
     }
+    const url = `https://api.whatsapp.com/send?phone=${cleanPhone}&text=${encodeURIComponent(text || "")}`;
+    window.open(url, "_blank", "noopener") || (window.location.href = url);
 }
 
 function openPdfBlob(blob, filename) {

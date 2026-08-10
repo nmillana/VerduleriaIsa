@@ -1,4 +1,4 @@
-const CACHE_NAME = "verduleria-isa-pwa-v20260810-manual-clients-whatsapp-polish";
+const CACHE_NAME = "verduleria-isa-pwa-v20260810-whatsapp-direct-contact";
 
 self.addEventListener("install", (event) => {
     self.skipWaiting();
