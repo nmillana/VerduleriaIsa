@@ -1,4 +1,4 @@
-const CACHE_NAME = "verduleria-isa-pwa-v20260810-client-home-catalog-redesign";
+const CACHE_NAME = "verduleria-isa-pwa-v20260810-client-home-polish-admin-access";
 
 self.addEventListener("install", (event) => {
     self.skipWaiting();

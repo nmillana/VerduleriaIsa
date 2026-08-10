@@ -2523,11 +2523,15 @@ function renderClientBottomNav(active = "inicio") {
         return `<a class="${activeClass.trim()}" href="${href}">${icon}<span>${label}</span></a>`;
     };
     const cartActive = active === "carrito" ? " active" : "";
+    const adminItem = canShowAdminAccess()
+        ? `<button type="button" data-action="switch-role" data-role="admin"><span class="nav-icon nav-icon-admin" aria-hidden="true"></span><span>Admin</span></button>`
+        : "";
     return `
-        <nav class="mobile-bottom-nav client-bottom-nav" aria-label="Navegación clienta">
+        <nav class="mobile-bottom-nav client-bottom-nav ${adminItem ? "has-admin" : ""}" aria-label="Navegación clienta">
             ${item("inicio", "#/cliente/pedido/nuevo", "Inicio", "nav-icon-home")}
             ${item("pedidos", "#/cliente/dashboard", "Pedidos", "nav-icon-bag")}
             ${item("perfil", "#/cliente/perfil", "Perfil", "nav-icon-user")}
+            ${adminItem}
             <button class="${cartActive.trim()}" type="button" data-action="open-cart-review" aria-label="Ver carrito">
                 <span class="app-cart-icon" aria-hidden="true"></span>
                 <span>Carrito</span>
@@ -2680,12 +2684,6 @@ function renderClientOrderFormPage(products, draft, sourceOrder, editOrder, late
             ${notes}
             ${currentOrderCard}
 
-            <section class="home-benefits" aria-label="Beneficios">
-                <article><span class="client-icon client-icon-truck" aria-hidden="true"></span><strong>Despacho a tu casa</strong><p>Rápido y seguro</p></article>
-                <article><span class="client-icon client-icon-leaf" aria-hidden="true"></span><strong>Productos frescos</strong><p>Seleccionados cada día</p></article>
-                <article><span class="client-icon client-icon-lock" aria-hidden="true"></span><strong>Compra segura</strong><p>Tus datos protegidos</p></article>
-                <article><span class="client-icon client-icon-chat" aria-hidden="true"></span><strong>¿Dudas?</strong><p>Escríbenos por WhatsApp</p></article>
-            </section>
         </form>
     `;
 }
@@ -4862,7 +4860,8 @@ function isAdminAccessEmail(value) {
 }
 
 function canShowAdminAccess() {
-    return Boolean(state.profiles.admin && isAdminAccessEmail(state.session?.user?.email || state.profiles.admin.email));
+    const email = state.session?.user?.email || state.profiles.admin?.email || state.profile?.email;
+    return isAdminAccessEmail(email);
 }
 
 function firstWord(value) {
