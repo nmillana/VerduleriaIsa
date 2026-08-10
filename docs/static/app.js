@@ -4860,8 +4860,8 @@ function isAdminAccessEmail(value) {
 }
 
 function canShowAdminAccess() {
-    const email = state.session?.user?.email || state.profiles.admin?.email || state.profile?.email;
-    return isAdminAccessEmail(email);
+    const email = normalizeEmail(state.session?.user?.email || state.profiles.admin?.email || state.profile?.email);
+    return ADMIN_ACCESS_EMAILS.has(email);
 }
 
 function firstWord(value) {
