@@ -3974,3 +3974,96 @@ nav.mobile-bottom-nav.client-top-nav.has-admin {
         height: 66px;
     }
 }
+
+
+/* Weekly closing and monthly billing 2026-08-10 */
+.week-status-line {
+    display: block;
+    margin-top: 0.22rem;
+    color: var(--muted);
+    font-size: 0.86rem;
+    font-weight: 500;
+}
+
+.week-closure-actions {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1rem;
+    padding: 0 1.1rem 1rem;
+}
+
+.week-closure-actions .muted {
+    max-width: 680px;
+}
+
+.week-closure-actions .button[disabled],
+.monthly-billing-card .button[disabled] {
+    cursor: default;
+}
+
+.monthly-billing-list,
+.monthly-billing-card {
+    display: grid;
+    gap: 1rem;
+}
+
+.monthly-billing-note {
+    max-width: none;
+}
+
+.monthly-statement-summary {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.75rem;
+}
+
+.monthly-statement-summary div {
+    display: grid;
+    gap: 0.25rem;
+    padding: 0.9rem;
+    border: 1px solid rgba(20, 105, 76, 0.1);
+    border-radius: 8px;
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(248, 246, 240, 0.94));
+}
+
+.monthly-statement-summary span {
+    color: var(--muted);
+    font-size: 0.9rem;
+}
+
+.monthly-statement-summary strong {
+    color: var(--accent-deep);
+    font-size: 1.3rem;
+}
+
+.monthly-statement-table {
+    margin-top: 0.2rem;
+}
+
+@media (max-width: 720px) {
+    .week-closure-actions {
+        display: grid;
+        padding: 0 0.72rem 0.72rem;
+    }
+
+    .week-closure-actions .button,
+    .monthly-billing-card .hero-actions .button {
+        width: 100%;
+    }
+
+    .monthly-statement-summary {
+        grid-template-columns: 1fr;
+        gap: 0.55rem;
+    }
+
+    .monthly-statement-summary div {
+        grid-template-columns: minmax(0, 1fr) auto;
+        align-items: center;
+        padding: 0.72rem 0.82rem;
+    }
+
+    .monthly-statement-summary strong {
+        font-size: 1.1rem;
+    }
+}

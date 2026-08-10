@@ -484,6 +484,18 @@ async function resolveRoute(route) {
         };
     }
 
+    if (route.path === "/admin/cobros-mensuales") {
+        const redirect = requireRole("admin", "/admin/login", "Debes ingresar como administradora.");
+        if (redirect) {
+            return redirect;
+        }
+        const orders = await fetchOrders({ month, includeClients: true });
+        return {
+            title: "Cobros mensuales",
+            content: renderAdminMonthlyBillingPage(buildMonthlyBilling(orders), month),
+        };
+    }
+
     if (route.path === "/admin/consolidado") {
         const redirect = requireRole("admin", "/admin/login", "Debes ingresar como administradora.");
         if (redirect) {
@@ -766,6 +778,7 @@ async function fetchOrders(options = {}) {
             client_email: client?.email || "",
             client_phone: client?.phone || "",
             client_address: client?.address || "",
+            client_billing_type: client?.billing_type || "semanal",
         };
     });
 }
@@ -803,6 +816,7 @@ async function fetchOrderById(orderId, options = {}) {
         client_email: client?.email || "",
         client_phone: client?.phone || "",
         client_address: client?.address || "",
+        client_billing_type: client?.billing_type || "semanal",
     };
 }
 
@@ -1175,6 +1189,13 @@ async function handleSubmit(event) {
         return;
     }
 
+
+    if (kind === "admin-monthly-billing-filter") {
+        const month = validMonth(new FormData(form).get("month")) || currentMonthValue();
+        navigate(`/admin/cobros-mensuales?month=${month}`);
+        return;
+    }
+
     setFormBusy(form, true);
     setInlineStatus(form, "Procesando...", "notice");
     try {
@@ -1241,6 +1262,15 @@ async function handleClick(event) {
                 break;
             case "print-month":
                 await printMonthlySummary(actionNode.dataset.month || currentMonthValue());
+                break;
+            case "print-monthly-client":
+                await printAdminMonthlyStatement(Number(actionNode.dataset.clientId), actionNode.dataset.month || currentMonthValue());
+                break;
+            case "open-monthly-whatsapp":
+                await openWhatsAppForMonthlyStatement(Number(actionNode.dataset.clientId), actionNode.dataset.month || currentMonthValue());
+                break;
+            case "close-week":
+                await closeWeek(actionNode.dataset.weekStart, actionNode.dataset.weekEnd);
                 break;
             case "export-consolidation":
                 await exportConsolidationXls(actionNode.dataset.month || currentMonthValue());
@@ -1680,6 +1710,112 @@ async function printMonthlySummary(month) {
     openPrintWindow(buildMonthlyPrintMarkup(state.profile, month, orders), `Resumen mensual ${month} | ${APP_NAME}`);
 }
 
+
+async function printAdminMonthlyStatement(clientId, month) {
+    const { client, orders } = await fetchAdminMonthlyStatement(clientId, month);
+    const pdfBlob = await buildMonthlyStatementPdfBlob(client, month, orders);
+    openPdfBlob(pdfBlob, monthlyStatementFilename(client, month));
+}
+
+async function openWhatsAppForMonthlyStatement(clientId, month) {
+    const { client, orders } = await fetchAdminMonthlyStatement(clientId, month);
+    const phone = formatPhoneInternational(client.phone || "");
+    if (!phone) {
+        throw new Error("La clienta no tiene un número válido para WhatsApp.");
+    }
+
+    const pdfBlob = await buildMonthlyStatementPdfBlob(client, month, orders);
+    const filename = monthlyStatementFilename(client, month);
+    const text = monthlyStatementWhatsappMessage(client, month, orders);
+    const pdfFile = typeof File === "function"
+        ? new File([pdfBlob], filename, { type: "application/pdf" })
+        : null;
+
+    if (pdfFile && canSharePdfFile(pdfFile)) {
+        try {
+            await navigator.share({
+                title: `Cobro mensual ${month} | ${APP_NAME}`,
+                text,
+                files: [pdfFile],
+            });
+            return;
+        } catch (error) {
+            if (error?.name === "AbortError") {
+                return;
+            }
+            console.warn("No pude compartir el consolidado mensual directamente.", error);
+        }
+    }
+
+    const fallbackText = `${text}
+
+Nota: este navegador no permite adjuntar el PDF automáticamente. En el celular, usa Compartir y elige WhatsApp para enviarlo sin guardar.`;
+    const url = `https://wa.me/${phone}?text=${encodeURIComponent(fallbackText)}`;
+    window.open(url, "_blank", "noopener") || (window.location.href = url);
+    state.flash = {
+        tone: "notice",
+        message: "WhatsApp no permite adjuntar PDFs automáticamente en este navegador. En el celular, usa Compartir y elige WhatsApp para enviar el consolidado PDF sin guardarlo.",
+    };
+    await renderCurrentRoute();
+}
+
+async function fetchAdminMonthlyStatement(clientId, month) {
+    if (!clientId) {
+        throw new Error("No encontré la clienta para el consolidado mensual.");
+    }
+    const orders = await fetchOrders({ clientId, month, includeClients: true });
+    const statementOrders = monthlyStatementOrders(orders);
+    if (!orders.length) {
+        throw new Error("No encontré pedidos de esa clienta en este mes.");
+    }
+    if (!statementOrders.length) {
+        throw new Error("Esta clienta aún no tiene pedidos cerrados como comprado o pagado en este mes.");
+    }
+    const first = orders[0];
+    const client = {
+        id: clientId,
+        name: first.client_name || `Clienta #${clientId}`,
+        email: first.client_email || "",
+        phone: first.client_phone || "",
+        address: first.client_address || "",
+        billing_type: first.client_billing_type || "mensual",
+    };
+    return { client, orders: statementOrders };
+}
+
+async function closeWeek(weekStart, weekEnd) {
+    const start = new Date(weekStart);
+    const end = new Date(weekEnd);
+    if (!Number.isFinite(start.getTime()) || !Number.isFinite(end.getTime())) {
+        throw new Error("No pude identificar la semana a cerrar.");
+    }
+    const confirmed = typeof window.confirm === "function"
+        ? window.confirm("Cerrar esta semana dejará todos los pedidos pendientes como Comprado y fijará sus precios para que no cambien con la lista nueva. ¿Continuar?")
+        : true;
+    if (!confirmed) {
+        return;
+    }
+
+    const rows = await runQuery(
+        state.client
+            .from("orders")
+            .update({ status: "comprado", purchased_at: new Date().toISOString() })
+            .gte("created_at", start.toISOString())
+            .lt("created_at", end.toISOString())
+            .eq("status", "pendiente")
+            .select("id")
+    );
+
+    const count = rows.length;
+    state.flash = {
+        tone: "notice",
+        message: count
+            ? `Semana cerrada: ${count} pedido(s) quedaron en Comprado con precios fijos.`
+            : "No había pedidos pendientes para cerrar en esa semana.",
+    };
+    await renderCurrentRoute();
+}
+
 async function exportConsolidationXls(month) {
     const orders = await fetchOrders({ month, includeItems: true, includeClients: true });
     const consolidation = buildConsolidation(orders);
@@ -1887,6 +2023,7 @@ function renderNavigation() {
             `<a href="#/admin/dashboard">Panel</a>`,
             `<a href="#/admin/pedidos">Pedidos</a>`,
             `<a href="#/admin/consolidado">Consolidado</a>`,
+            `<a href="#/admin/cobros-mensuales">Mensuales</a>`,
             `<a href="#/admin/productos">Productos</a>`,
             `<a href="#/admin/clientes">Clientas</a>`,
             state.profiles.client ? `<button type="button" data-action="switch-role" data-role="client">Clienta</button>` : "",
@@ -2975,7 +3112,7 @@ function renderAdminConsolidationPage(consolidation, month) {
             <div>
                 <p class="eyebrow">Operaciones</p>
                 <h1>Consolidado de compras</h1>
-                <p class="muted">Agregado de todos los pedidos por semana para lista de compra.</p>
+                <p class="muted">Agregado por semana. Cerrar semana deja los pedidos en Comprado y conserva sus precios aunque cambie la lista siguiente.</p>
             </div>
             <div class="hero-actions">
                 <form class="month-filter" data-form="admin-consolidation-filter">
@@ -2983,6 +3120,7 @@ function renderAdminConsolidationPage(consolidation, month) {
                     <button class="button ghost" type="submit">Filtrar mes</button>
                 </form>
                 <button class="button primary" type="button" data-action="export-consolidation" data-month="${e(month)}">Exportar XLS</button>
+                <a class="button ghost" href="#/admin/cobros-mensuales?month=${e(month)}">Cobros mensuales</a>
                 <a class="button ghost" href="#/admin/dashboard">Volver</a>
             </div>
         </section>
@@ -2993,9 +3131,18 @@ function renderAdminConsolidationPage(consolidation, month) {
                 ${consolidation.map((week, index) => `
                     <details class="week-card" ${index === 0 ? "open" : ""}>
                         <summary>
-                            <div><strong>${e(week.label)}</strong></div>
+                            <div>
+                                <strong>${e(week.label)}</strong>
+                                <span class="week-status-line">
+                                    ${week.order_count} pedido(s) · ${week.pending_count} pendiente(s) · ${week.purchased_count} comprado(s) · ${week.paid_count} pagado(s)
+                                </span>
+                            </div>
                             <strong>${formatCurrency(week.total)}</strong>
                         </summary>
+                        <div class="week-closure-actions">
+                            <p class="muted">Al cerrar, las clientas semanales y mensuales quedan con este pedido en Comprado. Luego puedes enviar la boleta semanal desde cada pedido.</p>
+                            <button class="button primary" type="button" data-action="close-week" data-week-start="${e(week.week_start)}" data-week-end="${e(week.week_end)}" ${week.pending_count ? "" : "disabled"}>${week.pending_count ? "Cerrar semana" : "Semana cerrada"}</button>
+                        </div>
                         <table class="data-table">
                             <thead>
                                 <tr>
@@ -3026,6 +3173,80 @@ function renderAdminConsolidationPage(consolidation, month) {
         `}
     `;
 }
+
+function renderAdminMonthlyBillingPage(groups, month) {
+    const cards = groups.length
+        ? groups.map((group) => renderMonthlyBillingClientCard(group, month)).join("")
+        : `<section class="panel"><p class="muted">No hay clientas mensuales con pedidos en este mes.</p></section>`;
+
+    return `
+        <section class="section-head">
+            <div>
+                <p class="eyebrow">Cobro mensual</p>
+                <h1>Clientas mensuales</h1>
+                <p class="muted">El consolidado mensual no incluye productos; solo muestra pedido, semana y monto total a cancelar.</p>
+            </div>
+            <div class="hero-actions">
+                <form class="month-filter" data-form="admin-monthly-billing-filter">
+                    <input type="month" name="month" value="${e(month)}">
+                    <button class="button ghost" type="submit">Ver mes</button>
+                </form>
+                <a class="button ghost" href="#/admin/consolidado?month=${e(month)}">Cerrar semanas</a>
+            </div>
+        </section>
+
+        <section class="panel monthly-billing-note">
+            <h2>Cómo se usa</h2>
+            <p class="muted">Primero cierra cada semana en el consolidado. Esos pedidos quedan en Comprado con precio fijo. Al final del mes, envías este resumen a cada clienta mensual; el detalle queda en sus boletas semanales y en la app.</p>
+        </section>
+
+        <section class="monthly-billing-list">
+            ${cards}
+        </section>
+    `;
+}
+
+function renderMonthlyBillingClientCard(group, month) {
+    const rows = group.orders.length
+        ? group.orders.map((order) => `
+            <tr>
+                <td>${e(weekLabelForDate(order.created_at))}</td>
+                <td>#${order.id}</td>
+                <td>${e(formatDateOnly(order.created_at))}</td>
+                <td><span class="status-pill" data-status="${e(order.status)}">${e(statusLabel(order.status))}</span></td>
+                <td>${formatCurrency(order.display_total)}</td>
+            </tr>
+        `).join("")
+        : `<tr><td colspan="5">Sin pedidos cerrados. Cierra la semana antes de enviar el cobro mensual.</td></tr>`;
+    const disabled = group.orders.length ? "" : "disabled";
+    return `
+        <article class="panel monthly-billing-card">
+            <div class="section-head compact-section-head">
+                <div>
+                    <h2>${e(group.client_name)}</h2>
+                    <p class="muted">Clienta #${group.client_id} · ${e(group.client_phone || "Sin teléfono")} · ${e(group.client_address || "Sin dirección")}</p>
+                </div>
+                <div class="hero-actions">
+                    <button class="button ghost" type="button" data-action="print-monthly-client" data-client-id="${group.client_id}" data-month="${e(month)}" ${disabled}>Imprimir / PDF</button>
+                    <button class="button primary" type="button" data-action="open-monthly-whatsapp" data-client-id="${group.client_id}" data-month="${e(month)}" ${disabled}>Enviar por WhatsApp</button>
+                </div>
+            </div>
+            <div class="monthly-statement-summary">
+                <div><span>Pedidos cerrados</span><strong>${group.orders.length}</strong></div>
+                <div><span>Total mensual</span><strong>${formatCurrency(group.total)}</strong></div>
+                <div><span>Total a cancelar</span><strong>${formatCurrency(group.total_due)}</strong></div>
+            </div>
+            ${group.pending_count ? `<div class="notice-banner"><p>${group.pending_count} pedido(s) mensual(es) siguen pendientes y no entran al cobro hasta cerrar la semana.</p></div>` : ""}
+            <table class="data-table monthly-statement-table">
+                <thead>
+                    <tr><th>Semana</th><th>Pedido</th><th>Fecha</th><th>Estado</th><th>Monto</th></tr>
+                </thead>
+                <tbody>${rows}</tbody>
+            </table>
+        </article>
+    `;
+}
+
 
 function renderLoadingCard(message) {
     return `
@@ -3264,18 +3485,31 @@ function buildConsolidation(orders) {
     const weeks = new Map();
 
     for (const order of orders) {
-        const orderDate = new Date(order.created_at);
-        const weekNumber = isoWeekNumber(orderDate);
-        const label = `Semana ${String(weekNumber).padStart(2, "0")} (${orderDate.getFullYear()})`;
-
-        if (!weeks.has(label)) {
-            weeks.set(label, new Map());
+        const meta = weekMetaForDate(order.created_at);
+        if (!weeks.has(meta.key)) {
+            weeks.set(meta.key, {
+                ...meta,
+                products: new Map(),
+                order_count: 0,
+                pending_count: 0,
+                purchased_count: 0,
+                paid_count: 0,
+            });
         }
 
-        const products = weeks.get(label);
+        const week = weeks.get(meta.key);
+        week.order_count += 1;
+        if (order.status === "pendiente") {
+            week.pending_count += 1;
+        } else if (order.status === "pagado") {
+            week.paid_count += 1;
+        } else if (order.status === "comprado") {
+            week.purchased_count += 1;
+        }
+
         for (const item of order.items || []) {
             const key = `${item.product_name}||${item.requested_unit}`;
-            const current = products.get(key) || {
+            const current = week.products.get(key) || {
                 product_name: item.product_name,
                 requested_unit: item.requested_unit,
                 cantidad: 0,
@@ -3286,15 +3520,85 @@ function buildConsolidation(orders) {
             current.cantidad += item.quantity;
             current.precio_unitario = unitPrice;
             current.total += Math.round(unitPrice * item.quantity);
-            products.set(key, current);
+            week.products.set(key, current);
         }
     }
 
-    return [...weeks.entries()].map(([label, products]) => ({
-        label,
-        products: [...products.values()].sort((a, b) => a.product_name.localeCompare(b.product_name, "es")),
-        total: [...products.values()].reduce((sum, product) => sum + product.total, 0),
-    }));
+    return [...weeks.values()]
+        .map((week) => ({
+            ...week,
+            products: [...week.products.values()].sort((a, b) => a.product_name.localeCompare(b.product_name, "es")),
+            total: [...week.products.values()].reduce((sum, product) => sum + product.total, 0),
+        }))
+        .sort((a, b) => new Date(b.week_start) - new Date(a.week_start));
+}
+
+function buildMonthlyBilling(orders) {
+    const groups = new Map();
+
+    for (const order of orders) {
+        if (order.client_billing_type !== "mensual") {
+            continue;
+        }
+        const key = order.client_id;
+        const group = groups.get(key) || {
+            client_id: key,
+            client_name: order.client_name || `Clienta #${key}`,
+            client_phone: order.client_phone || "",
+            client_address: order.client_address || "",
+            orders: [],
+            pending_count: 0,
+            total: 0,
+            total_due: 0,
+        };
+
+        if (isOrderClosedForMonthlyStatement(order)) {
+            group.orders.push(order);
+            group.total += order.display_total;
+            if (order.status !== "pagado") {
+                group.total_due += order.display_total;
+            }
+        } else {
+            group.pending_count += 1;
+        }
+        groups.set(key, group);
+    }
+
+    return [...groups.values()]
+        .map((group) => ({
+            ...group,
+            orders: monthlyStatementOrders(group.orders),
+        }))
+        .sort((a, b) => a.client_name.localeCompare(b.client_name, "es"));
+}
+
+function monthlyStatementOrders(orders) {
+    return orders
+        .filter(isOrderClosedForMonthlyStatement)
+        .slice()
+        .sort((a, b) => new Date(a.created_at) - new Date(b.created_at) || a.id - b.id);
+}
+
+function isOrderClosedForMonthlyStatement(order) {
+    return order.status === "comprado" || order.status === "pagado";
+}
+
+function weekMetaForDate(value) {
+    const orderDate = new Date(value);
+    const weekStart = startOfWeek(orderDate);
+    const weekEnd = new Date(weekStart);
+    weekEnd.setDate(weekEnd.getDate() + 7);
+    const weekNumber = isoWeekNumber(orderDate);
+    return {
+        key: weekStart.toISOString().slice(0, 10),
+        label: `Semana ${String(weekNumber).padStart(2, "0")} (${orderDate.getFullYear()})`,
+        week_start: weekStart.toISOString(),
+        week_end: weekEnd.toISOString(),
+    };
+}
+
+function weekLabelForDate(value) {
+    return weekMetaForDate(value).label;
 }
 
 
@@ -3631,6 +3935,129 @@ async function buildOrderPdfBlob(order, includeClient) {
     return doc.output("blob");
 }
 
+
+async function buildMonthlyStatementPdfBlob(client, month, orders) {
+    const PdfConstructor = pdfConstructor();
+    const doc = new PdfConstructor({ orientation: "portrait", unit: "mm", format: "a4", compress: true });
+    const statementOrders = monthlyStatementOrders(orders);
+    const total = statementOrders.reduce((sum, order) => sum + order.display_total, 0);
+    const totalDue = statementOrders.reduce((sum, order) => sum + (order.status === "pagado" ? 0 : order.display_total), 0);
+    const page = { width: 210, height: 297 };
+    const margin = 10;
+    const green = [24, 86, 55];
+    const softGreen = [238, 248, 231];
+    const leafGreen = [112, 168, 58];
+    const orange = [242, 112, 16];
+    const border = [184, 216, 153];
+
+    doc.setProperties({
+        title: `Cobro mensual ${month} | ${APP_NAME}`,
+        subject: "Consolidado mensual de pedidos",
+        author: APP_NAME,
+    });
+    doc.setFillColor(255, 255, 255);
+    doc.rect(0, 0, page.width, page.height, "F");
+    doc.setFillColor(248, 252, 243);
+    doc.circle(198, 278, 38, "F");
+
+    try {
+        const logo = await getReceiptLogoDataUrl();
+        doc.addImage(logo, "PNG", margin, 7, 62, 42, undefined, "FAST");
+    } catch (error) {
+        console.warn("No pude cargar el logo para el PDF mensual.", error);
+        setPdfFont(doc, 16, "bold", green);
+        doc.text(APP_NAME, margin, 24);
+    }
+
+    setPdfFont(doc, 24, "bold", green);
+    doc.text("Cobro mensual", 122, 22);
+    setPdfFont(doc, 10.5, "normal", [61, 82, 70]);
+    doc.text(monthDisplayLabel(month), 122, 31);
+    doc.setDrawColor(...orange);
+    doc.setLineWidth(1);
+    doc.line(143, 37, 162, 37);
+
+    drawRoundedPanel(doc, margin, 55, page.width - margin * 2, 24, 4, border, [255, 255, 255]);
+    setPdfFont(doc, 12, "bold", green);
+    doc.text(client.name || `Clienta #${client.id}`, margin + 6, 65);
+    setPdfFont(doc, 8.8, "normal", [31, 47, 41]);
+    doc.text(fitPdfText(doc, [client.phone, client.address].filter(Boolean).join(" | ") || "Datos de contacto no informados", page.width - margin * 2 - 12), margin + 6, 73);
+
+    drawRoundedPanel(doc, margin, 88, page.width - margin * 2, 41, 4, border, [255, 255, 255]);
+    const cardGap = 5;
+    const cardW = (page.width - margin * 2 - 16 - cardGap * 2) / 3;
+    const cards = [
+        ["Pedidos cerrados", String(statementOrders.length), green],
+        ["Total mensual", formatCurrency(total), green],
+        ["Total a cancelar", formatCurrency(totalDue), orange],
+    ];
+    cards.forEach((card, index) => {
+        const x = margin + 6 + index * (cardW + cardGap);
+        drawRoundedPanel(doc, x, 96, cardW, 24, 3.5, border, [255, 254, 251]);
+        setPdfFont(doc, 13, "bold", card[2]);
+        doc.text(card[1], x + 5, 105);
+        setPdfFont(doc, 8, "normal", [31, 47, 41]);
+        doc.text(card[0], x + 5, 114);
+    });
+
+    drawMonthlyStatementTable(doc, margin, 142, page.width - margin * 2, statementOrders, green, softGreen, border);
+    drawReceiptFooter(doc, margin, 273, page.width - margin * 2, green, orange, leafGreen);
+    return doc.output("blob");
+}
+
+function drawMonthlyStatementTable(doc, x, y, width, orders, green, softGreen, border) {
+    const rowH = 10;
+    const headerH = 9;
+    const height = Math.max(45, headerH + rowH * Math.max(orders.length, 1) + 16);
+    drawRoundedPanel(doc, x, y, width, Math.min(height, 120), 4, border, [255, 255, 255]);
+    setPdfFont(doc, 13, "bold", green);
+    doc.text("Resumen por semana", x + 6, y + 10);
+
+    const tableX = x + 5;
+    const tableY = y + 17;
+    const tableW = width - 10;
+    const columns = [
+        ["Semana", 45],
+        ["Pedido", 25],
+        ["Fecha", 42],
+        ["Estado", 31],
+        ["Monto", tableW - 143],
+    ];
+
+    doc.setFillColor(42, 111, 40);
+    doc.roundedRect(tableX, tableY, tableW, headerH, 2.5, 2.5, "F");
+    setPdfFont(doc, 7.5, "bold", [255, 255, 255]);
+    let currentX = tableX;
+    columns.forEach(([label, colW]) => {
+        doc.text(label, currentX + 2.2, tableY + 5.6);
+        currentX += colW;
+    });
+
+    if (!orders.length) {
+        setPdfFont(doc, 8, "normal", [31, 47, 41]);
+        doc.text("Sin pedidos cerrados para este mes.", tableX + 3, tableY + headerH + 8);
+        return;
+    }
+
+    let rowY = tableY + headerH;
+    orders.forEach((order, index) => {
+        doc.setFillColor(index % 2 ? 252 : 255, index % 2 ? 254 : 255, index % 2 ? 249 : 255);
+        doc.rect(tableX, rowY, tableW, rowH, "F");
+        doc.setDrawColor(221, 235, 205);
+        doc.line(tableX, rowY, tableX + tableW, rowY);
+        const values = [weekLabelForDate(order.created_at), `#${order.id}`, formatDateOnly(order.created_at), statusLabel(order.status), formatCurrency(order.display_total)];
+        let textX = tableX;
+        columns.forEach(([, colW], colIndex) => {
+            const align = colIndex === 4 ? "right" : "left";
+            const drawX = align === "right" ? textX + colW - 2.2 : textX + 2.2;
+            setPdfFont(doc, 7.6, colIndex === 4 ? "bold" : "normal", colIndex === 4 ? green : [31, 47, 41]);
+            doc.text(fitPdfText(doc, values[colIndex], colW - 4), drawX, rowY + 6.5, { align });
+            textX += colW;
+        });
+        rowY += rowH;
+    });
+}
+
 function pdfConstructor() {
     const constructor = window.jspdf?.jsPDF || window.jsPDF;
     if (!constructor) {
@@ -3832,6 +4259,24 @@ function orderWhatsappMessage(order) {
         `Total final o proyectado: ${formatCurrency(order.display_total)}.`,
         "",
         "Adjunto la boleta en PDF con el detalle del pedido.",
+    ].join("\n").trim();
+}
+
+
+function monthlyStatementFilename(client, month) {
+    return `Cobro_mensual_${month}_${productImageSlug(client.name || `clienta_${client.id}`)}_Verduleria_Isa.pdf`;
+}
+
+function monthlyStatementWhatsappMessage(client, month, orders) {
+    const statementOrders = monthlyStatementOrders(orders);
+    const totalDue = statementOrders.reduce((sum, order) => sum + (order.status === "pagado" ? 0 : order.display_total), 0);
+    return [
+        `Hola ${client.name || ""},`,
+        `te comparto el consolidado mensual de ${monthDisplayLabel(month)} de Verdulería Isa.`,
+        `Incluye ${statementOrders.length} pedido(s) cerrado(s).`,
+        `Total a cancelar: ${formatCurrency(totalDue)}.`,
+        "",
+        "El detalle de cada semana está en tus boletas y en la app.",
     ].join("\n").trim();
 }
 
@@ -4313,6 +4758,25 @@ function formatQtyUnit(quantity, requestedUnit) {
 
 function formatOrderItemQuantity(item) {
     return formatQtyUnit(item.quantity, item.requested_unit);
+}
+
+
+function formatDateOnly(value) {
+    if (!value) {
+        return "-";
+    }
+    return new Date(value).toLocaleDateString("es-CL", { dateStyle: "medium" });
+}
+
+function monthDisplayLabel(month) {
+    const [year, monthNumber] = String(month || "").split("-").map(Number);
+    if (!year || !monthNumber) {
+        return String(month || "");
+    }
+    return new Date(year, monthNumber - 1, 1).toLocaleDateString("es-CL", {
+        month: "long",
+        year: "numeric",
+    });
 }
 
 function formatDateTime(value) {
