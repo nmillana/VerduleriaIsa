@@ -6247,3 +6247,105 @@ nav.mobile-bottom-nav.client-top-nav.has-admin {
         font-size: 1.08rem;
     }
 }
+
+
+/* Admin manual clients and mobile nav polish 2026-08-10 */
+.admin-client-form {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.admin-client-form .full-row {
+    grid-column: 1 / -1;
+}
+
+.admin-client-form textarea {
+    min-height: 78px;
+}
+
+.client-bottom-nav.has-admin {
+    gap: 0.08rem;
+    padding-inline: 0.32rem;
+}
+
+.client-bottom-nav.has-admin a,
+.client-bottom-nav.has-admin button {
+    min-height: 56px;
+    padding-inline: 0;
+    font-size: 0.66rem;
+}
+
+.client-bottom-nav a > span:last-child,
+.client-bottom-nav button > span:not(.nav-icon):not(.app-cart-icon):not([data-selected-count]) {
+    max-width: 100%;
+    overflow: hidden;
+    text-align: center;
+    text-overflow: clip;
+    white-space: nowrap;
+    line-height: 1.05;
+}
+
+.client-bottom-nav.has-admin .nav-icon,
+.client-bottom-nav.has-admin .app-cart-icon {
+    transform: scale(0.9);
+}
+
+.client-bottom-nav.has-admin [data-selected-count] {
+    top: 1px;
+    right: 3px;
+    transform: scale(0.88);
+}
+
+.product-row.product-card-home .product-add-button span,
+.product-row.product-card-catalog .product-add-button span {
+    display: grid;
+    width: 100%;
+    height: 100%;
+    place-items: center;
+}
+
+@media (max-width: 760px) {
+    .admin-client-form {
+        grid-template-columns: 1fr;
+    }
+
+    .client-bottom-nav.has-admin {
+        grid-template-columns: repeat(5, minmax(0, 1fr));
+        min-height: 64px;
+        padding: 0.32rem 0.25rem;
+    }
+
+    .client-bottom-nav.has-admin a,
+    .client-bottom-nav.has-admin button {
+        grid-template-rows: 22px auto;
+        min-height: 50px;
+        font-size: 0.58rem;
+    }
+
+    .client-bottom-nav.has-admin .nav-icon,
+    .client-bottom-nav.has-admin .app-cart-icon {
+        width: 22px;
+        height: 22px;
+    }
+
+    .product-row.product-card-home {
+        min-height: 172px;
+        padding: 0.68rem;
+    }
+
+    .product-row.product-card-home .product-thumb {
+        height: 76px;
+    }
+}
+
+@media (max-width: 380px) {
+    .client-bottom-nav.has-admin a,
+    .client-bottom-nav.has-admin button {
+        font-size: 0.54rem;
+    }
+
+    .client-bottom-nav.has-admin [data-selected-count] {
+        min-width: 18px;
+        height: 18px;
+        font-size: 0.62rem;
+    }
+}

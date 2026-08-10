@@ -944,6 +944,29 @@ async function updateClientProfile(values) {
     setActiveProfile("client", client);
 }
 
+async function createManualClient(values) {
+    const payload = {
+        auth_user_id: null,
+        name: sanitizeText(values.name, 120),
+        email: normalizeEmail(values.email),
+        phone: sanitizeText(values.phone, 40),
+        address: sanitizeText(values.address, 255),
+        billing_type: values.billing_type === 'mensual' ? 'mensual' : 'semanal',
+    };
+
+    if (!payload.name || !payload.email || !payload.phone || !payload.address) {
+        throw new Error('Completa nombre, correo, teléfono y dirección. El correo queda como dato de contacto aunque la clienta no use la app.');
+    }
+
+    const rows = await runQuery(
+        state.client
+            .from('clients')
+            .insert(payload)
+            .select(clientProfileFields())
+    );
+    return normalizeClient(rows[0] || payload);
+}
+
 async function upsertClientProfileForCurrentUser(values) {
     const user = state.session?.user;
     if (!user) {
@@ -1601,6 +1624,20 @@ async function submitClientProfile(form) {
     });
     state.flash = { tone: "notice", message: "Datos actualizados." };
     navigate("/cliente/dashboard", true);
+}
+
+async function submitAdminClientCreate(form) {
+    const formData = new FormData(form);
+    const client = await createManualClient({
+        name: formData.get('name'),
+        email: formData.get('email'),
+        phone: formData.get('phone'),
+        address: formData.get('address'),
+        billing_type: formData.get('billing_type'),
+    });
+    form.reset();
+    state.flash = { tone: 'notice', message: 'Clienta ' + client.name + ' creada manualmente.' };
+    await renderCurrentRoute();
 }
 
 async function submitClientOrder(form) {
@@ -3240,17 +3277,48 @@ function renderAdminProductsPage(products) {
 
 function renderAdminClientsPage(clients) {
     return `
-        <section class="section-head">
+        <section class='section-head'>
             <div>
-                <p class="eyebrow">Base de clientas</p>
+                <p class='eyebrow'>Base de clientas</p>
                 <h1>Clientas registradas</h1>
             </div>
         </section>
 
-        <section class="panel">
-            <table class="data-table">
+        <section class='panel'>
+            <div class='section-head compact-section-head'>
+                <div>
+                    <h2>Ingresar clienta manual</h2>
+                    <p class='muted'>Para clientas que no usarán la app. Quedan disponibles para pedidos, boletas semanales, cobros mensuales y WhatsApp.</p>
+                </div>
+            </div>
+            <form class='inline-form grid-form admin-client-form' data-form='admin-client-create'>
+                <label>Nombre
+                    <input type='text' name='name' autocomplete='name' required>
+                </label>
+                <label>Correo de contacto
+                    <input type='email' name='email' autocomplete='email' required>
+                </label>
+                <label>Teléfono WhatsApp
+                    <input type='tel' name='phone' autocomplete='tel' placeholder='569...' required>
+                </label>
+                <label>Tipo de pago
+                    <select name='billing_type'>
+                        <option value='semanal'>Semanal</option>
+                        <option value='mensual'>Mensual</option>
+                    </select>
+                </label>
+                <label class='full-row'>Dirección
+                    <textarea name='address' rows='2' autocomplete='street-address' required></textarea>
+                </label>
+                <p class='field-note full-row' data-inline-status>La clienta se crea sin acceso Auth; si después quiere usar la app, se enlaza con el mismo correo.</p>
+                <button class='button primary' type='submit' data-busy-text='Creando...'>Crear clienta</button>
+            </form>
+        </section>
+
+        <section class='panel'>
+            <table class='data-table'>
                 <thead>
-                    <tr><th>Nombre</th><th>Correo</th><th>Teléfono</th><th>Dirección</th><th>Pedidos</th><th>Pago</th></tr>
+                    <tr><th>Nombre</th><th>Correo</th><th>Teléfono</th><th>Dirección</th><th>Pedidos</th><th>Pago</th><th>Origen</th></tr>
                 </thead>
                 <tbody>
                     ${clients.length ? clients.map((client) => `
@@ -3260,9 +3328,10 @@ function renderAdminClientsPage(clients) {
                             <td>${e(client.phone)}</td>
                             <td>${e(client.address)}</td>
                             <td>${client.order_count}</td>
-                            <td>${e(client.billing_type || "semanal")}</td>
+                            <td>${e(client.billing_type || 'semanal')}</td>
+                            <td>${client.auth_user_id ? 'App' : 'Manual'}</td>
                         </tr>
-                    `).join("") : `<tr><td colspan="6">Aún no hay clientas registradas.</td></tr>`}
+                    `).join(String()) : `<tr><td colspan='7'>Aún no hay clientas registradas.</td></tr>`}
                 </tbody>
             </table>
         </section>
@@ -3493,7 +3562,7 @@ function renderSetupPanel(extraMessage = "") {
             ${extraMessage ? `<div class="error-box"><p>${e(extraMessage)}</p></div>` : ""}
             <div class="list-grid">
                 <p>1. Completa <code>docs/static/config.js</code> con tu <code>SUPABASE_ANON_KEY</code>.</p>
-                <p>2. Ejecuta <code>supabase/sql/009_github_pages_auth.sql</code>, <code>supabase/sql/011_admin_first_login_setup.sql</code>, <code>supabase/sql/012_catalog_units_other_request.sql</code>, <code>supabase/sql/013_client_registration_repair.sql</code>, <code>supabase/sql/014_product_classification_presentation.sql</code>, <code>supabase/sql/015_product_images_and_order_edit.sql</code> y <code>supabase/sql/016_admin_email_allowlist.sql</code> en el SQL Editor.</p>
+                <p>2. Ejecuta <code>supabase/sql/009_github_pages_auth.sql</code>, <code>supabase/sql/011_admin_first_login_setup.sql</code>, <code>supabase/sql/012_catalog_units_other_request.sql</code>, <code>supabase/sql/013_client_registration_repair.sql</code>, <code>supabase/sql/014_product_classification_presentation.sql</code>, <code>supabase/sql/015_product_images_and_order_edit.sql</code>, <code>supabase/sql/016_admin_email_allowlist.sql</code> y <code>supabase/sql/017_admin_manual_clients.sql</code> en el SQL Editor.</p>
                 <p>3. Crea las administradoras en Supabase Auth con la clave temporal acordada.</p>
                 <p>4. Publica la carpeta <code>docs/</code> desde GitHub Pages.</p>
             </div>
@@ -3511,7 +3580,7 @@ function renderErrorView(error) {
                 <p>${e(friendlyError(error))}</p>
             </div>
             <div class="list-grid">
-                <p>Archivos clave: <code>supabase/sql/009_github_pages_auth.sql</code>, <code>supabase/sql/011_admin_first_login_setup.sql</code>, <code>supabase/sql/012_catalog_units_other_request.sql</code>, <code>supabase/sql/013_client_registration_repair.sql</code>, <code>supabase/sql/014_product_classification_presentation.sql</code>, <code>supabase/sql/015_product_images_and_order_edit.sql</code> y <code>supabase/sql/016_admin_email_allowlist.sql</code></p>
+                <p>Archivos clave: <code>supabase/sql/009_github_pages_auth.sql</code>, <code>supabase/sql/011_admin_first_login_setup.sql</code>, <code>supabase/sql/012_catalog_units_other_request.sql</code>, <code>supabase/sql/013_client_registration_repair.sql</code>, <code>supabase/sql/014_product_classification_presentation.sql</code>, <code>supabase/sql/015_product_images_and_order_edit.sql</code>, <code>supabase/sql/016_admin_email_allowlist.sql</code> y <code>supabase/sql/017_admin_manual_clients.sql</code></p>
                 <p>Config pública: <code>docs/static/config.js</code></p>
                 <p>Publicación: GitHub Pages apuntando a la carpeta <code>docs/</code></p>
             </div>
@@ -5288,7 +5357,7 @@ function friendlyError(error) {
         return "Falta ejecutar supabase/sql/012_catalog_units_other_request.sql en Supabase. Abre el archivo, copia todo su contenido y pegalo en el SQL Editor; no pegues solo el nombre del archivo.";
     }
     if (/database error saving new user|error saving user|violates row-level security.*clients|new row violates row-level security/i.test(raw)) {
-        return "Supabase no pudo completar el registro de clienta. Ejecuta supabase/sql/013_client_registration_repair.sql y vuelve a intentar.";
+        return "Supabase no pudo guardar la clienta por permisos RLS. Ejecuta supabase/sql/013_client_registration_repair.sql y, para altas manuales desde administración, supabase/sql/017_admin_manual_clients.sql.";
     }
     if (/security purposes|only request this after/i.test(raw)) {
         return "Supabase está limitando temporalmente ese intento por seguridad. Espera el tiempo indicado y vuelve a probar.";
