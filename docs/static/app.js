@@ -270,6 +270,10 @@ function afterRender(route) {
         refreshOrderSummary();
         filterOrderRows();
     }
+    if (route.path === "/cliente/pedido/nuevo" && route.query.get("category")) {
+        const target = `cat-${productImageSlug(route.query.get("category"))}`;
+        window.setTimeout(() => document.getElementById(target)?.scrollIntoView({ behavior: "smooth", block: "start" }), 80);
+    }
 }
 
 async function resolveRoute(route) {
@@ -394,7 +398,7 @@ async function resolveRoute(route) {
             : readOrderDraft();
         return {
             title: editOrder ? "Editar pedido" : "Nuevo pedido",
-            content: renderClientOrderFormPage(products, draft, sourceOrder, editOrder, latestOrder),
+            content: renderClientOrderFormPage(products, draft, sourceOrder, editOrder, latestOrder, route),
         };
     }
 
@@ -1601,7 +1605,8 @@ async function submitClientProfile(form) {
 
 async function submitClientOrder(form) {
     const formData = new FormData(form);
-    const selections = collectOrderSelections(form);
+    const existingDraft = readOrderDraft();
+    const selections = mergeOrderSelections(existingDraft.selections, collectOrderSelections(form), collectOrderProductIds(form));
     const sourceOrderId = Number(form.querySelector('input[name="source_order_id"]')?.value || 0);
     const clientNote = sanitizeText(formData.get("client_note"), MAX_CLIENT_NOTE_LENGTH);
     const otherRequest = sanitizeText(formData.get("other_request"), MAX_OTHER_REQUEST_LENGTH);
@@ -2044,6 +2049,9 @@ function renderNavigation() {
 
 function clientBottomNavActive() {
     const path = state.route?.path || "";
+    if (path === "/cliente/carrito") {
+        return "carrito";
+    }
     if (path.includes("perfil")) {
         return "perfil";
     }
@@ -2462,6 +2470,7 @@ function selectionForProduct(selections, productId) {
 function renderClientProductCard(product, selection = {}, options = {}) {
     const displayName = productDisplayName(product);
     const category = options.category || product.category || "";
+    const variantClass = options.variant ? ` product-card-${options.variant}` : "";
     const unitChoices = unitChoicesForProduct(product);
     const selectedUnit = normalizeUnitForProduct(selection.requested_unit || selection.unit, product);
     const quantity = normalizeQuantity(selection.quantity);
@@ -2470,7 +2479,7 @@ function renderClientProductCard(product, selection = {}, options = {}) {
     const quantityValue = hasQuantity ? formatQuantityInputValue(quantity) : "";
 
     return `
-        <div class="product-row mobile-product-card ${hasQuantity ? "is-selected" : ""}" data-product-id="${product.id}" data-product-name="${e(productSearchText(product))}" data-product-category="${e(category)}">
+        <div class="product-row mobile-product-card${variantClass} ${hasQuantity ? "is-selected" : ""}" data-product-id="${product.id}" data-product-name="${e(productSearchText(product))}" data-product-category="${e(category)}">
             <div class="product-info">
                 ${renderProductThumb(product)}
                 <div class="product-copy">
@@ -2480,7 +2489,7 @@ function renderClientProductCard(product, selection = {}, options = {}) {
                 </div>
             </div>
             <div class="product-controls compact-product-controls">
-                <button class="product-add-button" type="button" data-action="add-product" data-product-id="${product.id}" data-add-product ${hasQuantity ? "hidden" : ""}>Agregar</button>
+                <button class="product-add-button" type="button" data-action="add-product" data-product-id="${product.id}" data-add-product ${hasQuantity ? "hidden" : ""} aria-label="Agregar ${e(displayName)}"><span aria-hidden="true">+</span></button>
                 <div class="quantity-selector" data-quantity-selector ${hasQuantity ? "" : "hidden"}>
                     <button class="quantity-step" type="button" data-action="decrement-product" data-product-id="${product.id}" aria-label="Quitar ${e(displayName)}">-</button>
                     <input
@@ -2513,94 +2522,247 @@ function renderClientBottomNav(active = "inicio") {
         const icon = `<span class="nav-icon ${iconClass}" aria-hidden="true"></span>`;
         return `<a class="${activeClass.trim()}" href="${href}">${icon}<span>${label}</span></a>`;
     };
-    const adminItem = canShowAdminAccess()
-        ? `<button type="button" data-action="switch-role" data-role="admin"><span class="nav-icon nav-icon-admin" aria-hidden="true"></span><span>Admin</span></button>`
-        : "";
+    const cartActive = active === "carrito" ? " active" : "";
     return `
-        <nav class="mobile-bottom-nav client-top-nav ${adminItem ? "has-admin" : ""}" aria-label="Navegación clienta">
-            <img class="client-nav-logo" src="./static/logo-verduleria-isa.png" alt="${e(APP_NAME)}">
-            <div class="client-nav-links">
-                ${item("inicio", "#/cliente/pedido/nuevo", "Inicio", "nav-icon-home")}
-                ${item("pedidos", "#/cliente/dashboard", "Pedidos", "nav-icon-bag")}
-                ${item("perfil", "#/cliente/perfil", "Perfil", "nav-icon-user")}
-                ${adminItem}
-            </div>
-            <button class="app-cart-button client-nav-cart" type="button" data-action="open-cart-review" aria-label="Ver carrito">
+        <nav class="mobile-bottom-nav client-bottom-nav" aria-label="Navegación clienta">
+            ${item("inicio", "#/cliente/pedido/nuevo", "Inicio", "nav-icon-home")}
+            ${item("pedidos", "#/cliente/dashboard", "Pedidos", "nav-icon-bag")}
+            ${item("perfil", "#/cliente/perfil", "Perfil", "nav-icon-user")}
+            <button class="${cartActive.trim()}" type="button" data-action="open-cart-review" aria-label="Ver carrito">
                 <span class="app-cart-icon" aria-hidden="true"></span>
+                <span>Carrito</span>
                 <span data-selected-count>0</span>
             </button>
         </nav>
     `;
 }
 
-function renderClientOrderFormPage(products, draft, sourceOrder, editOrder, latestOrder) {
+function renderClientOrderFormPage(products, draft, sourceOrder, editOrder, latestOrder, route = null) {
     const selections = draft.selections || {};
     const clientNote = draft.client_note || "";
     const otherRequest = draft.other_request || "";
     const sourceOrderId = sourceOrder?.id || draft.source_order_id || "";
     const editOrderId = editOrder?.id || draft.edit_order_id || "";
-    const repeatLatestAction = latestOrder && !editOrder && !sourceOrder
-        ? `<a class="button ghost repeat-latest-button" href="#/cliente/carrito?source=${latestOrder.id}">Repetir último pedido</a>`
-        : "";
     const groupedProducts = groupProducts(products);
     const activeCategories = CATEGORY_CHOICES.filter(([category]) => (groupedProducts.get(category) || []).length > 0);
-    const groupsMarkup = activeCategories
-        .map(([category, label]) => {
-            const items = groupedProducts.get(category) || [];
-            if (!items.length) {
-                return "";
-            }
-            return `
-                <div class="panel product-group" id="cat-${e(productImageSlug(category))}" data-product-group data-category="${e(category)}">
-                    <h2>${e(label)}</h2>
-                    <div class="product-table">
-                        ${items.map((product) => renderClientProductCard(product, selectionForProduct(selections, product.id), { category })).join("")}
+    const isCatalogView = route?.query?.get("view") === "catalog" || Boolean(editOrder || sourceOrder);
+    const featuredProducts = selectFeaturedProducts(products).slice(0, 4);
+    const featuredIds = new Set(featuredProducts.map((product) => product.id));
+    const hiddenProducts = products.filter((product) => !featuredIds.has(product.id));
+    const repeatLatestAction = latestOrder && !editOrder && !sourceOrder
+        ? `<a class="button ghost repeat-latest-button" href="#/cliente/carrito?source=${latestOrder.id}"><span class="client-icon client-icon-repeat" aria-hidden="true"></span>Repetir último pedido</a>`
+        : "";
+    const categoryHref = (category) => `#/cliente/pedido/nuevo?view=catalog&category=${encodeURIComponent(category)}`;
+    const allCatalogHref = "#/cliente/pedido/nuevo?view=catalog";
+    const notes = renderClientNotesDetails(otherRequest, clientNote, isCatalogView);
+    const hiddenInputs = !isCatalogView && hiddenProducts.length
+        ? `<div class="home-hidden-product-inputs" aria-hidden="true">${hiddenProducts.map((product) => renderClientProductCard(product, selectionForProduct(selections, product.id), { category: product.category, variant: "hidden" })).join("")}</div>`
+        : "";
+
+    if (isCatalogView) {
+        const groupsMarkup = activeCategories
+            .map(([category, label]) => {
+                const items = groupedProducts.get(category) || [];
+                if (!items.length) {
+                    return "";
+                }
+                return `
+                    <div class="panel product-group catalog-product-group" id="cat-${e(productImageSlug(category))}" data-product-group data-category="${e(category)}">
+                        <h2>${e(label)}</h2>
+                        <div class="product-table catalog-product-grid">
+                            ${items.map((product) => renderClientProductCard(product, selectionForProduct(selections, product.id), { category, variant: "catalog" })).join("")}
+                        </div>
                     </div>
-                </div>
-            `;
-        })
-        .join("");
+                `;
+            })
+            .join("");
+
+        return `
+            <form class="catalog-app catalog-screen mobile-shop-order" data-form="client-order-create" data-order-form data-delivery-fee="${DELIVERY_FEE}">
+                <input type="hidden" name="source_order_id" value="${sourceOrderId}">
+                <input type="hidden" name="edit_order_id" value="${editOrderId}">
+
+                <header class="shop-catalog-header">
+                    <a class="app-back-button" href="#/cliente/pedido/nuevo" aria-label="Volver al inicio"></a>
+                    <h1>Catálogo</h1>
+                    <button class="app-cart-button" type="button" data-action="open-cart-review" aria-label="Ver carrito">
+                        <span class="app-cart-icon" aria-hidden="true"></span>
+                        <span data-selected-count>0</span>
+                    </button>
+                </header>
+
+                ${editOrder ? `<div class="badge-block">Editando pedido #${editOrder.id}</div>` : sourceOrder ? `<div class="badge-block">Basado en el pedido #${sourceOrder.id}</div>` : ""}
+
+                <section class="catalog-toolbar shop-catalog-toolbar">
+                    <div class="shop-searchbar catalog-search">
+                        <span class="shop-search-icon" aria-hidden="true"></span>
+                        <input type="search" data-product-search placeholder="Buscar productos..." aria-label="Buscar producto">
+                    </div>
+                </section>
+
+                <nav class="category-tabs catalog-category-tabs shop-catalog-tabs" aria-label="Categorías del catálogo">
+                    <button class="category-chip" type="button" data-action="focus-category" data-target="cat-${e(productImageSlug("frutas"))}" data-category-nav="frutas">Frutas</button>
+                    <button class="category-chip" type="button" data-action="focus-category" data-target="cat-${e(productImageSlug("verduras_hortalizas"))}" data-category-nav="verduras_hortalizas">Verduras</button>
+                    <button class="category-chip" type="button" data-action="focus-category" data-target="cat-${e(productImageSlug("listos_cocinar"))}" data-category-nav="listos_cocinar">Listos <span class="client-icon client-icon-bowl" aria-hidden="true"></span></button>
+                    <button class="category-chip" type="button" data-action="focus-category" data-target="client-order-notes"><span class="client-icon client-icon-sliders" aria-hidden="true"></span>Más filtros</button>
+                </nav>
+
+                <section class="product-columns catalog-products" id="catalog-products">
+                    <p class="empty-search" data-product-search-empty hidden>No hay productos con esa búsqueda.</p>
+                    ${groupsMarkup || `<section class="empty-state"><p class="eyebrow">Catálogo</p><h2>Sin productos activos</h2><p class="muted">Puedes usar el campo Otro mientras la administradora actualiza el catálogo.</p></section>`}
+                </section>
+
+                ${notes}
+
+                <p class="field-note mobile-order-status" data-inline-status>Carrito guardado en este dispositivo. El campo Otro se revisa manualmente y no suma precio estimado.</p>
+            </form>
+        `;
+    }
+
+    const homeProductCards = featuredProducts.map((product) => renderClientProductCard(product, selectionForProduct(selections, product.id), { category: product.category, variant: "home" })).join("");
+    const currentOrderCard = renderHomeCurrentOrderCard(latestOrder, products, draft);
 
     return `
-        <form class="catalog-app mobile-shop-order" data-form="client-order-create" data-order-form data-delivery-fee="${DELIVERY_FEE}">
+        <form class="catalog-app client-home-screen mobile-shop-order" data-form="client-order-create" data-order-form data-delivery-fee="${DELIVERY_FEE}">
             <input type="hidden" name="source_order_id" value="${sourceOrderId}">
             <input type="hidden" name="edit_order_id" value="${editOrderId}">
+            ${hiddenInputs}
 
-            <section class="catalog-title-row">
-                <h1>Catálogo</h1>
-                ${editOrder ? `<div class="badge-block">Editando pedido #${editOrder.id}</div>` : sourceOrder ? `<div class="badge-block">Basado en el pedido #${sourceOrder.id}</div>` : ""}
+            <header class="client-home-topbar">
+                <img class="client-home-logo" src="./static/logo-verduleria-isa.png" alt="${e(APP_NAME)}">
+                <button class="app-cart-button" type="button" data-action="open-cart-review" aria-label="Ver carrito">
+                    <span class="app-cart-icon" aria-hidden="true"></span>
+                    <span data-selected-count>0</span>
+                </button>
+            </header>
+
+            <section class="client-home-hero">
+                <div class="client-home-hero-copy">
+                    <h1>¡Hola, ${e(firstName(state.profile?.name) || "Natalia")}! <span aria-hidden="true">&#128075;</span></h1>
+                    <p>¿Qué necesitas esta semana?</p>
+                    <a class="button primary" href="${allCatalogHref}"><span class="client-icon client-icon-basket" aria-hidden="true"></span>Armar mi pedido</a>
+                    ${repeatLatestAction}
+                </div>
+                <figure class="client-home-hero-image" aria-hidden="true"></figure>
             </section>
 
-            ${repeatLatestAction ? `<section class="catalog-primary-action">${repeatLatestAction}</section>` : ""}
+            <a class="home-searchbar" href="${allCatalogHref}" aria-label="Buscar productos">
+                <span class="shop-search-icon" aria-hidden="true"></span>
+                <span>Buscar frutas, verduras y más...</span>
+            </a>
 
-            <section class="catalog-toolbar">
-                <div class="shop-searchbar catalog-search">
-                    <input type="search" data-product-search placeholder="Buscar frutas, verduras y más..." aria-label="Buscar producto">
+            <section class="home-category-grid" aria-label="Categorías principales">
+                <a href="${categoryHref("frutas")}"><span class="home-category-icon home-category-fruit" aria-hidden="true"></span><strong>Frutas</strong></a>
+                <a href="${categoryHref("verduras_hortalizas")}"><span class="home-category-icon home-category-veg" aria-hidden="true"></span><strong>Verduras</strong></a>
+                <a href="${categoryHref("listos_cocinar")}"><span class="home-category-icon home-category-ready" aria-hidden="true"></span><strong>Listos para<br>cocinar</strong></a>
+                <a href="${allCatalogHref}"><span class="home-category-icon home-category-all" aria-hidden="true"></span><strong>Ver todas</strong></a>
+            </section>
+
+            <section class="home-weekly-selection">
+                <div>
+                    <h2>Selección semanal</h2>
+                    <p>Frescura que se siente</p>
+                    <a class="button ghost" href="${allCatalogHref}">Ver selección <span aria-hidden="true">&rsaquo;</span></a>
+                </div>
+                <figure aria-hidden="true"></figure>
+            </section>
+
+            <section class="home-usual-products">
+                <div class="home-section-title">
+                    <h2>Tus productos habituales</h2>
+                    <a href="${allCatalogHref}">Ver todos</a>
+                </div>
+                <div class="home-usual-grid">
+                    ${homeProductCards}
                 </div>
             </section>
 
-            <nav class="category-tabs catalog-category-tabs" aria-label="Categorías del catálogo">
-                ${activeCategories.map(([value, label]) => `<button class="category-chip" type="button" data-action="focus-category" data-target="cat-${e(productImageSlug(value))}" data-category-nav="${e(value)}">${e(label)}</button>`).join("")}
-            </nav>
+            ${notes}
+            ${currentOrderCard}
 
-            <section class="product-columns catalog-products" id="catalog-products">
-                <p class="empty-search" data-product-search-empty hidden>No hay productos con esa búsqueda.</p>
-                ${groupsMarkup || `<section class="empty-state"><p class="eyebrow">Catálogo</p><h2>Sin productos activos</h2><p class="muted">Puedes usar el campo Otro mientras la administradora actualiza el catálogo.</p></section>`}
+            <section class="home-benefits" aria-label="Beneficios">
+                <article><span class="client-icon client-icon-truck" aria-hidden="true"></span><strong>Despacho a tu casa</strong><p>Rápido y seguro</p></article>
+                <article><span class="client-icon client-icon-leaf" aria-hidden="true"></span><strong>Productos frescos</strong><p>Seleccionados cada día</p></article>
+                <article><span class="client-icon client-icon-lock" aria-hidden="true"></span><strong>Compra segura</strong><p>Tus datos protegidos</p></article>
+                <article><span class="client-icon client-icon-chat" aria-hidden="true"></span><strong>¿Dudas?</strong><p>Escríbenos por WhatsApp</p></article>
             </section>
-
-            <details class="home-notes-card catalog-notes-card" id="client-order-notes">
-                <summary>Otro producto u observaciones</summary>
-                <label>Otro
-                    <textarea name="other_request" rows="3" maxlength="${MAX_OTHER_REQUEST_LENGTH}" data-other-request placeholder="Pide aquí algo que no esté en el listado.">${e(otherRequest)}</textarea>
-                </label>
-                <label>Observaciones
-                    <textarea name="client_note" rows="3" maxlength="${MAX_CLIENT_NOTE_LENGTH}" data-client-note>${e(clientNote)}</textarea>
-                </label>
-            </details>
-
-            <p class="field-note mobile-order-status" data-inline-status>Carrito guardado en este dispositivo. El campo Otro se revisa manualmente y no suma precio estimado.</p>
         </form>
     `;
+}
+
+function firstName(value) {
+    return String(value || "").trim().split(/\s+/)[0] || "";
+}
+
+function renderClientNotesDetails(otherRequest, clientNote, open = false) {
+    return `
+        <details class="home-notes-card catalog-notes-card" id="client-order-notes" ${open ? "open" : ""}>
+            <summary>Otro producto u observaciones</summary>
+            <label>Otro
+                <textarea name="other_request" rows="3" maxlength="${MAX_OTHER_REQUEST_LENGTH}" data-other-request placeholder="Pide aquí algo que no esté en el listado.">${e(otherRequest || "")}</textarea>
+            </label>
+            <label>Observaciones
+                <textarea name="client_note" rows="3" maxlength="${MAX_CLIENT_NOTE_LENGTH}" data-client-note>${e(clientNote || "")}</textarea>
+            </label>
+        </details>
+    `;
+}
+
+function renderHomeCurrentOrderCard(latestOrder, products, draft) {
+    const draftSummary = buildDraftSummary(products, draft);
+    if (latestOrder) {
+        const canEdit = latestOrder.status === "pendiente";
+        const itemCount = latestOrder.items?.length || 0;
+        return `
+            <section class="home-current-order">
+                <span class="home-current-icon" aria-hidden="true"></span>
+                <div>
+                    <h2>Tu pedido actual</h2>
+                    <p><strong>Pedido #${latestOrder.id}</strong> <span class="status-pill" data-status="${e(latestOrder.status)}">${e(statusLabel(latestOrder.status))}</span></p>
+                    <p class="muted">Última actualización: ${e(formatDateTime(latestOrder.updated_at || latestOrder.created_at))}</p>
+                </div>
+                <div class="home-current-total">
+                    <strong>${formatCurrency(latestOrder.display_total)}</strong>
+                    <span>${itemCount || ""} ${itemCount === 1 ? "producto" : "productos"}</span>
+                </div>
+                <a class="home-current-action" href="#/cliente/pedido/${latestOrder.id}">${canEdit ? "Ver / Editar pedido" : "Ver pedido"}<span aria-hidden="true">&rsaquo;</span></a>
+            </section>
+        `;
+    }
+    if (!draftSummary.count && !draft.other_request && !draft.client_note) {
+        return "";
+    }
+    return `
+        <section class="home-current-order">
+            <span class="home-current-icon" aria-hidden="true"></span>
+            <div>
+                <h2>Tu pedido actual</h2>
+                <p><strong>Borrador guardado</strong> <span class="status-pill" data-status="pendiente">Pendiente</span></p>
+                <p class="muted">Todavía no envías esta solicitud.</p>
+            </div>
+            <div class="home-current-total">
+                <strong>${formatCurrency(draftSummary.total)}</strong>
+                <span>${draftSummary.count} ${draftSummary.count === 1 ? "producto" : "productos"}</span>
+            </div>
+            <button class="home-current-action" type="button" data-action="open-cart-review">Ver / Editar pedido<span aria-hidden="true">&rsaquo;</span></button>
+        </section>
+    `;
+}
+
+function buildDraftSummary(products, draft) {
+    const productById = new Map(products.map((product) => [product.id, product]));
+    let subtotal = 0;
+    let count = 0;
+    for (const [productId, selection] of Object.entries(draft.selections || {})) {
+        const product = productById.get(Number(productId));
+        const quantity = normalizeQuantity(selection?.quantity);
+        if (!product || quantity <= 0) {
+            continue;
+        }
+        count += 1;
+        subtotal += quantity * Number(product.estimated_price || 0);
+    }
+    return { count, subtotal, total: count ? subtotal + DELIVERY_FEE : 0 };
 }
 
 function renderClientCartReviewPage(products, draft) {
@@ -3371,6 +3533,7 @@ function refreshOrderSummary() {
     const countNodes = Array.from(new Set([
         ...form.querySelectorAll("[data-selected-count]"),
         ...document.querySelectorAll(".client-top-nav [data-selected-count]"),
+        ...document.querySelectorAll(".client-bottom-nav [data-selected-count]"),
     ]));
     const deliveryFee = Number(form.dataset.deliveryFee || DELIVERY_FEE);
 
@@ -3816,8 +3979,10 @@ function writeOrderDraft(draft) {
 function persistOrderDraft(form) {
     try {
         const formData = new FormData(form);
+        const existingDraft = readOrderDraft();
+        const visibleSelections = collectOrderSelections(form, { relaxed: true });
         const draft = {
-            selections: collectOrderSelections(form, { relaxed: true }),
+            selections: mergeOrderSelections(existingDraft.selections, visibleSelections, collectOrderProductIds(form)),
             client_note: sanitizeText(formData.get("client_note"), MAX_CLIENT_NOTE_LENGTH),
             other_request: sanitizeText(formData.get("other_request"), MAX_OTHER_REQUEST_LENGTH),
             source_order_id: Number(formData.get("source_order_id") || 0) || null,
@@ -3904,6 +4069,29 @@ function collectOrderSelections(form, options = {}) {
         };
     }
     return selections;
+}
+
+function collectOrderProductIds(form) {
+    return new Set(Array.from(form.querySelectorAll("[data-quantity-input]"))
+        .map((input) => Number(input.name.replace("qty_", "")))
+        .filter(Boolean));
+}
+
+function mergeOrderSelections(existingSelections = {}, visibleSelections = {}, visibleProductIds = new Set()) {
+    const merged = { ...normalizeOrderDraft({ selections: existingSelections }).selections };
+    for (const productId of visibleProductIds) {
+        delete merged[productId];
+    }
+    for (const [productId, selection] of Object.entries(visibleSelections)) {
+        const quantity = normalizeQuantity(selection?.quantity);
+        if (quantity > 0) {
+            merged[Number(productId)] = {
+                quantity,
+                requested_unit: normalizeUnit(selection?.requested_unit || selection?.unit),
+            };
+        }
+    }
+    return merged;
 }
 
 function buildSecureOrderItems(selections) {
