@@ -2670,7 +2670,7 @@ function renderClientOrderFormPage(products, draft, sourceOrder, editOrder, late
         : "";
     const categoryHref = (category) => `#/cliente/pedido/nuevo?view=catalog&category=${encodeURIComponent(category)}`;
     const allCatalogHref = "#/cliente/pedido/nuevo?view=catalog";
-    const notes = renderClientNotesDetails(otherRequest, clientNote, isCatalogView);
+    const notes = renderClientNotesDetails(otherRequest, clientNote);
     const hiddenInputs = !isCatalogView && hiddenProducts.length
         ? `<div class="home-hidden-product-inputs" aria-hidden="true">${hiddenProducts.map((product) => renderClientProductCard(product, selectionForProduct(selections, product.id), { category: product.category, variant: "hidden" })).join("")}</div>`
         : "";
@@ -2804,9 +2804,9 @@ function firstName(value) {
     return String(value || "").trim().split(/\s+/)[0] || "";
 }
 
-function renderClientNotesDetails(otherRequest, clientNote, open = false) {
+function renderClientNotesDetails(otherRequest, clientNote) {
     return `
-        <details class="home-notes-card catalog-notes-card" id="client-order-notes" ${open ? "open" : ""}>
+        <details class="home-notes-card catalog-notes-card" id="client-order-notes">
             <summary>Otro producto u observaciones</summary>
             <label>Otro
                 <textarea name="other_request" rows="3" maxlength="${MAX_OTHER_REQUEST_LENGTH}" data-other-request placeholder="Pide aquí algo que no esté en el listado.">${e(otherRequest || "")}</textarea>
@@ -2934,7 +2934,7 @@ function renderClientCartReviewPage(products, draft) {
                 ${rows || `<p class="muted">Aún no hay productos del catálogo. Puedes volver al catálogo o usar el campo Otro.</p>`}
             </section>
 
-            <details class="home-notes-card catalog-notes-card" id="client-order-notes" open>
+            <details class="home-notes-card catalog-notes-card" id="client-order-notes">
                 <summary>Otro producto u observaciones</summary>
                 <label>Otro
                     <textarea name="other_request" rows="3" maxlength="${MAX_OTHER_REQUEST_LENGTH}" data-other-request placeholder="Pide aquí algo que no esté en el listado.">${e(draft.other_request || "")}</textarea>

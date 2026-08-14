@@ -1,4 +1,4 @@
-const CACHE_NAME = "verduleria-isa-pwa-v20260814-catalog-submit-edit";
+const CACHE_NAME = "verduleria-isa-pwa-v20260814-notes-collapsed";
 
 self.addEventListener("install", (event) => {
     self.skipWaiting();
