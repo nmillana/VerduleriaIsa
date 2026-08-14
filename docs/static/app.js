@@ -1381,7 +1381,7 @@ async function updateProductQuantity(actionNode, action) {
     }
 
     const current = normalizeQuantity(String(input.value || "").replace(",", "."));
-    const unitNode = form.querySelector(`[name="unit_${productId}"]`);
+    const unitNode = form.querySelector(`[name="unit_${productId}"]:checked`) || form.querySelector(`[name="unit_${productId}"]`);
     const step = normalizeUnit(unitNode?.value) === "kg" ? 0.5 : 1;
     let next = current;
 
@@ -2536,6 +2536,28 @@ function selectionForProduct(selections, productId) {
     return selections?.[productId] || selections?.[String(productId)] || {};
 }
 
+function renderProductUnitControl(productId, unitChoices, selectedUnit, label) {
+    if (!unitChoices.length) {
+        return "";
+    }
+
+    if (unitChoices.length === 1) {
+        const [value, choiceLabel] = unitChoices[0];
+        return `<input type="hidden" name="unit_${productId}" value="${e(value)}"><span class="unit-static-label" aria-label="Unidad ${e(label)}">${e(choiceLabel)}</span>`;
+    }
+
+    return `
+        <fieldset class="unit-segment" aria-label="Unidad ${e(label)}">
+            ${unitChoices.map(([value, choiceLabel]) => `
+                <label>
+                    <input type="radio" name="unit_${productId}" value="${e(value)}" ${selectedUnit === value ? "checked" : ""} data-unit-input>
+                    <span>${e(choiceLabel)}</span>
+                </label>
+            `).join("")}
+        </fieldset>
+    `;
+}
+
 function renderClientProductCard(product, selection = {}, options = {}) {
     const displayName = productDisplayName(product);
     const category = options.category || product.category || "";
@@ -2576,9 +2598,7 @@ function renderClientProductCard(product, selection = {}, options = {}) {
                     >
                     <button class="quantity-step" type="button" data-action="increment-product" data-product-id="${product.id}" aria-label="Agregar ${e(displayName)}">+</button>
                 </div>
-                <select name="unit_${product.id}" aria-label="Unidad ${e(displayName)}" data-unit-input>
-                    ${unitChoices.map(([value, label]) => `<option value="${value}" ${selectedUnit === value ? "selected" : ""}>${e(label)}</option>`).join("")}
-                </select>
+                ${renderProductUnitControl(product.id, unitChoices, selectedUnit, displayName)}
                 <button class="product-remove-button" type="button" data-action="remove-product" data-product-id="${product.id}" data-remove-product ${hasQuantity ? "" : "hidden"}>Quitar</button>
             </div>
         </div>
@@ -2871,9 +2891,7 @@ function renderClientCartReviewPage(products, draft) {
                     <input type="number" step="${quantityStep}" min="0" max="${MAX_QUANTITY}" inputmode="decimal" name="qty_${product.id}" aria-label="Cantidad ${e(productDisplayName(product))}" value="${e(formatQuantityInputValue(selection.quantity))}" data-price="${product.estimated_price}" placeholder="0" data-quantity-input>
                     <button class="quantity-step" type="button" data-action="increment-product" data-product-id="${product.id}" aria-label="Agregar ${e(productDisplayName(product))}">+</button>
                 </div>
-                <select name="unit_${product.id}" aria-label="Unidad ${e(productDisplayName(product))}" data-unit-input>
-                    ${unitChoices.map(([value, label]) => `<option value="${value}" ${selectedUnit === value ? "selected" : ""}>${e(label)}</option>`).join("")}
-                </select>
+                ${renderProductUnitControl(product.id, unitChoices, selectedUnit, productDisplayName(product))}
                 <button class="product-remove-button" type="button" data-action="remove-product" data-product-id="${product.id}" data-remove-product>Quitar producto</button>
             </div>
         </div>
@@ -2922,7 +2940,7 @@ function renderClientCartReviewPage(products, draft) {
 
 function renderClientOrderDetailPage(order) {
     return `
-        <section class="section-head">
+        <section class="section-head client-order-detail-head">
             <div>
                 <p class="eyebrow">Detalle</p>
                 <h1>Pedido #${order.id}</h1>
@@ -2934,8 +2952,8 @@ function renderClientOrderDetailPage(order) {
             </div>
         </section>
 
-        <section class="panel">
-            <div class="grid three-up">
+        <section class="panel client-order-summary-panel">
+            <div class="grid three-up client-order-summary-grid">
                 <article class="stat-card">
                     <span class="stat-value">${formatCurrency(order.display_subtotal)}</span>
                     <span class="stat-label">${e(order.display_subtotal_label)}</span>
@@ -4166,7 +4184,7 @@ function collectOrderSelections(form, options = {}) {
             }
             throw new Error(`La cantidad máxima por producto es ${MAX_QUANTITY}.`);
         }
-        const unitNode = form.querySelector(`[name="unit_${productId}"]`);
+        const unitNode = form.querySelector(`[name="unit_${productId}"]:checked`) || form.querySelector(`[name="unit_${productId}"]`);
         selections[productId] = {
             quantity,
             requested_unit: normalizeUnit(unitNode?.value),
