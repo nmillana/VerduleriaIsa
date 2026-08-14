@@ -6403,3 +6403,152 @@ nav.mobile-bottom-nav.client-top-nav.has-admin {
         font-size: 0.62rem;
     }
 }
+
+/* Mobile home compact pass 2026-08-14 */
+@media (max-width: 760px) {
+    .page-shell.client-shell {
+        padding-bottom: 5rem;
+    }
+
+    .catalog-app.client-home-screen {
+        gap: 0.68rem;
+    }
+
+    .home-category-grid {
+        gap: 0.42rem;
+    }
+
+    .home-category-grid a {
+        gap: 0.24rem;
+        min-height: 70px;
+        padding: 0.4rem 0.35rem;
+    }
+
+    .home-category-icon {
+        width: 34px;
+        height: 34px;
+    }
+
+    .home-category-grid strong {
+        font-size: 0.72rem;
+        line-height: 1.04;
+    }
+
+    .home-category-fruit::before {
+        width: 17px;
+        height: 19px;
+    }
+
+    .home-category-fruit::after {
+        width: 8px;
+        height: 6px;
+        right: 9px;
+        top: 8px;
+    }
+
+    .home-category-veg::before {
+        width: 20px;
+        height: 16px;
+        box-shadow: -7px 5px 0 -4px currentColor, 7px 5px 0 -4px currentColor;
+    }
+
+    .home-category-ready::before {
+        width: 22px;
+        height: 12px;
+        top: 18px;
+        border-radius: 0 0 13px 13px;
+    }
+
+    .home-category-ready::after {
+        width: 15px;
+        height: 10px;
+        top: 8px;
+        border-top-width: 2px;
+        box-shadow: 0 -5px 0 -3px #ff7f11, 6px -5px 0 -3px #ff7f11;
+    }
+
+    .home-category-all::before {
+        width: 20px;
+        height: 20px;
+        background-size: 8px 8px, 8px 8px, 8px 8px, 8px 8px;
+        background-position: 0 0, 12px 0, 0 12px, 12px 12px;
+    }
+
+    .home-weekly-selection {
+        gap: 0.35rem;
+        padding: 0.68rem 0.8rem;
+    }
+
+    .home-weekly-selection h2 {
+        font-size: 1.08rem;
+        line-height: 1.1;
+    }
+
+    .home-weekly-selection p {
+        margin-top: 0.18rem;
+        font-size: 0.78rem;
+    }
+
+    .home-weekly-selection .button {
+        margin-top: 0.5rem;
+        min-height: 32px;
+        padding: 0.32rem 0.72rem;
+        font-size: 0.74rem;
+    }
+
+    .client-bottom-nav,
+    .client-bottom-nav.has-admin {
+        width: min(calc(100% - 1rem), 390px);
+        min-height: 52px;
+        bottom: 0.35rem;
+        gap: 0.03rem;
+        padding: 0.2rem 0.28rem;
+    }
+
+    .client-bottom-nav a,
+    .client-bottom-nav button,
+    .client-bottom-nav.has-admin a,
+    .client-bottom-nav.has-admin button {
+        grid-template-rows: 18px auto;
+        min-height: 42px;
+        font-size: 0.54rem;
+        line-height: 1;
+    }
+
+    .client-bottom-nav .nav-icon,
+    .client-bottom-nav .app-cart-icon,
+    .client-bottom-nav.has-admin .nav-icon,
+    .client-bottom-nav.has-admin .app-cart-icon {
+        width: 18px;
+        height: 18px;
+        transform: none;
+    }
+
+    .client-bottom-nav [data-selected-count],
+    .client-bottom-nav.has-admin [data-selected-count] {
+        top: 0;
+        right: 2px;
+        min-width: 16px;
+        height: 16px;
+        padding: 0 0.16rem;
+        font-size: 0.54rem;
+        transform: none;
+    }
+}
+
+@media (max-width: 380px) {
+    .home-category-grid a {
+        min-height: 66px;
+    }
+
+    .home-category-grid strong {
+        font-size: 0.68rem;
+    }
+
+    .client-bottom-nav a,
+    .client-bottom-nav button,
+    .client-bottom-nav.has-admin a,
+    .client-bottom-nav.has-admin button {
+        font-size: 0.5rem;
+    }
+}
