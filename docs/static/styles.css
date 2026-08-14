@@ -6180,48 +6180,93 @@ nav.mobile-bottom-nav.client-top-nav.has-admin {
     font-size: 1.35rem;
 }
 
-/* Home media alignment 2026-08-10 */
+/* Home desktop density cleanup 2026-08-14 */
 .client-home-hero {
-    grid-template-columns: minmax(0, 1fr) minmax(120px, 30%);
+    grid-template-columns: minmax(0, 1fr) minmax(150px, 24%);
     align-items: center;
-    min-height: 190px;
+    gap: 1rem;
+    min-height: 158px;
+    padding: 1.15rem 1.25rem;
 }
 
 .client-home-hero-copy {
     min-width: 0;
+    gap: 0.55rem;
+}
+
+.client-home-hero h1 {
+    font-size: clamp(1.5rem, 2.9vw, 2rem);
+}
+
+.client-home-hero p {
+    font-size: 0.98rem;
+}
+
+.client-home-hero .button {
+    width: min(100%, 380px);
+    min-height: 48px;
+    font-size: 0.94rem;
 }
 
 .client-home-hero-image {
     width: 100%;
-    min-height: 136px;
+    min-height: 118px;
+    max-height: 138px;
     margin: 0;
-    background-position: center;
-    background-size: contain, contain, contain, contain, auto;
+    background: url("https://www.themealdb.com/images/ingredients/Broccoli-medium.png") center / contain no-repeat;
+    filter: drop-shadow(0 16px 18px rgba(43, 77, 33, 0.14));
 }
 
 .home-weekly-selection {
-    grid-template-columns: minmax(0, 1fr) minmax(130px, 28%);
-    min-height: 160px;
+    grid-template-columns: minmax(0, 1fr) minmax(105px, 18%);
+    gap: 0.8rem;
+    min-height: 118px;
+    padding: 0.95rem 1.15rem;
+}
+
+.home-weekly-selection h2 {
+    font-size: clamp(1.25rem, 2.2vw, 1.55rem);
+}
+
+.home-weekly-selection p {
+    font-size: 0.95rem;
+}
+
+.home-weekly-selection .button {
+    margin-top: 0.72rem;
+    min-height: 40px;
+    padding: 0.45rem 1rem;
+    font-size: 0.9rem;
 }
 
 .home-weekly-selection figure {
     width: 100%;
-    min-height: 118px;
+    min-height: 82px;
+    max-height: 96px;
     margin: 0;
-    background-position: center;
-    background-size: contain, contain, contain, contain;
+    background: url("https://www.themealdb.com/images/ingredients/Pineapple%20Chunks-medium.png") center / contain no-repeat;
+    filter: drop-shadow(0 12px 14px rgba(43, 77, 33, 0.12));
+}
+
+.home-category-grid {
+    gap: 0.75rem;
 }
 
 .home-category-grid a {
-    min-height: 118px;
-    padding: 0.75rem;
+    gap: 0.42rem;
+    min-height: 96px;
+    padding: 0.65rem;
 }
 
 .home-category-icon {
-    width: 58px;
-    height: 58px;
+    width: 48px;
+    height: 48px;
 }
 
+.home-category-grid strong {
+    font-size: 0.92rem;
+    line-height: 1.15;
+}
 @media (max-width: 760px) {
     .client-home-hero {
         grid-template-columns: minmax(0, 1fr);
