@@ -1,4 +1,4 @@
-const CACHE_NAME = "verduleria-isa-pwa-v20260814-mobile-home-compact";
+const CACHE_NAME = "verduleria-isa-pwa-v20260814-orders-nav-compact";
 
 self.addEventListener("install", (event) => {
     self.skipWaiting();

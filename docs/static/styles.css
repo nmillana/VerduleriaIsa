@@ -6552,3 +6552,189 @@ nav.mobile-bottom-nav.client-top-nav.has-admin {
         font-size: 0.5rem;
     }
 }
+
+/* Client nav and orders mobile refinement 2026-08-14 */
+@media (max-width: 760px) {
+    .client-orders-page {
+        width: min(100%, 430px);
+        padding: 0 0.75rem 1rem;
+    }
+
+    .client-orders-page .section-head.compact-heading {
+        gap: 0.72rem;
+        padding-top: 0.15rem;
+    }
+
+    .client-orders-page .section-head.compact-heading > div:first-child {
+        display: grid;
+        gap: 0.22rem;
+        width: 100%;
+    }
+
+    .client-orders-page h1 {
+        font-size: 1.55rem;
+        line-height: 1.08;
+    }
+
+    .client-orders-contact {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.18rem 0.45rem;
+        max-width: 100%;
+        line-height: 1.28;
+    }
+
+    .client-orders-contact span {
+        min-width: 0;
+        overflow-wrap: anywhere;
+    }
+
+    .client-orders-contact span + span::before {
+        content: "|";
+        margin-right: 0.45rem;
+        color: rgba(18, 74, 47, 0.36);
+    }
+
+    .client-orders-page .hero-actions {
+        gap: 0.46rem;
+    }
+
+    .client-orders-page .month-filter {
+        gap: 0.46rem;
+    }
+
+    .client-orders-page .hero-actions .button,
+    .client-orders-page .month-filter .button,
+    .client-orders-page .month-filter input {
+        min-height: 40px;
+        font-size: 0.84rem;
+    }
+
+    .client-summary-grid,
+    .grid.three-up.client-summary-grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 0.42rem;
+        margin-top: 0.2rem;
+    }
+
+    .client-summary-grid .stat-card {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr);
+        align-content: center;
+        gap: 0.22rem;
+        min-height: 70px;
+        padding: 0.56rem 0.46rem;
+    }
+
+    .client-summary-grid .stat-value {
+        font-size: 1rem;
+        line-height: 1.02;
+        white-space: nowrap;
+    }
+
+    .client-summary-grid .stat-label {
+        font-size: 0.62rem;
+        line-height: 1.12;
+    }
+
+    .client-history-panel {
+        padding: 0.82rem;
+    }
+
+    .client-bottom-nav,
+    .client-bottom-nav.has-admin {
+        width: min(calc(100% - 1.4rem), 360px);
+        min-height: 46px;
+        bottom: 0.28rem;
+        padding: 0.14rem 0.2rem;
+    }
+
+    .client-bottom-nav a,
+    .client-bottom-nav button,
+    .client-bottom-nav.has-admin a,
+    .client-bottom-nav.has-admin button {
+        grid-template-rows: 16px 12px;
+        gap: 0.02rem;
+        min-height: 36px;
+        padding: 0;
+    }
+
+    .client-bottom-nav a > span:last-child,
+    .client-bottom-nav button > span:not(.nav-icon):not(.app-cart-icon):not([data-selected-count]),
+    .client-bottom-nav.has-admin a > span:last-child,
+    .client-bottom-nav.has-admin button > span:not(.nav-icon):not(.app-cart-icon):not([data-selected-count]) {
+        font-size: 0.49rem;
+        line-height: 1;
+        letter-spacing: 0;
+        white-space: nowrap;
+    }
+
+    .client-bottom-nav .nav-icon,
+    .client-bottom-nav.has-admin .nav-icon,
+    .client-bottom-nav .app-cart-icon,
+    .client-bottom-nav.has-admin .app-cart-icon {
+        width: 16px;
+        height: 16px;
+    }
+
+    .client-bottom-nav .app-cart-icon,
+    .client-bottom-nav.has-admin .app-cart-icon {
+        border-width: 2px;
+        border-radius: 0 0 5px 5px;
+    }
+
+    .client-bottom-nav .app-cart-icon::before,
+    .client-bottom-nav.has-admin .app-cart-icon::before {
+        left: 3px;
+        top: -8px;
+        width: 7px;
+        height: 8px;
+        border-width: 2px;
+    }
+
+    .client-bottom-nav [data-selected-count],
+    .client-bottom-nav.has-admin [data-selected-count] {
+        top: -3px;
+        right: -2px;
+        min-width: 15px;
+        height: 15px;
+        font-size: 0.5rem;
+    }
+}
+
+@media (max-width: 380px) {
+    .client-orders-page {
+        padding-inline: 0.58rem;
+    }
+
+    .client-summary-grid,
+    .grid.three-up.client-summary-grid {
+        gap: 0.32rem;
+    }
+
+    .client-summary-grid .stat-card {
+        min-height: 64px;
+        padding: 0.48rem 0.32rem;
+    }
+
+    .client-summary-grid .stat-value {
+        font-size: 0.88rem;
+    }
+
+    .client-summary-grid .stat-label {
+        font-size: 0.56rem;
+    }
+
+    .client-bottom-nav,
+    .client-bottom-nav.has-admin {
+        width: min(calc(100% - 0.9rem), 350px);
+    }
+
+    .client-bottom-nav a > span:last-child,
+    .client-bottom-nav button > span:not(.nav-icon):not(.app-cart-icon):not([data-selected-count]),
+    .client-bottom-nav.has-admin a > span:last-child,
+    .client-bottom-nav.has-admin button > span:not(.nav-icon):not(.app-cart-icon):not([data-selected-count]) {
+        font-size: 0.46rem;
+    }
+}

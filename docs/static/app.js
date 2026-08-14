@@ -2225,7 +2225,7 @@ function renderClientDashboardPage(client, dashboard, month) {
                 <div>
                     <p class="eyebrow">Mis pedidos</p>
                     <h1>Resumen del mes</h1>
-                    <p class="muted">${e(client.email)} | ${e(client.address)}</p>
+                    <p class="muted client-orders-contact"><span>${e(client.email)}</span><span>${e(client.address)}</span></p>
                 </div>
                 <div class="hero-actions">
                     <form class="month-filter" data-form="client-dashboard-filter">
