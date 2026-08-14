@@ -4231,15 +4231,12 @@ async function buildOrderPdfBlob(order, includeClient) {
     const page = { width: 210, height: 297 };
     const margin = 8;
     const green = [24, 86, 55];
-    const softGreen = [238, 248, 231];
     const leafGreen = [112, 168, 58];
     const orange = [242, 112, 16];
     const border = [184, 216, 153];
 
     doc.setFillColor(255, 255, 255);
     doc.rect(0, 0, page.width, page.height, "F");
-    doc.setFillColor(248, 252, 243);
-    doc.circle(196, 278, 38, "F");
 
     try {
         const logo = await getReceiptLogoDataUrl();
@@ -4392,31 +4389,36 @@ function drawDeliveryBlock(doc, x, y, width, height, order, green, leafGreen, bo
     doc.text(fitPdfText(doc, order.client_address || "Dirección no informada", width - 34), x + 25, y + 17);
 }
 
+function receiptSubtotalActualText(order) {
+    const actualSubtotal = order.subtotal_actual === undefined ? order.actual_total : order.subtotal_actual;
+    return actualSubtotal === null || actualSubtotal === undefined ? "-" : formatCurrency(actualSubtotal);
+}
+
 function drawSummaryBlock(doc, x, y, width, height, order, green, orange, leafGreen, border) {
     drawRoundedPanel(doc, x, y, width, height, 4, border, [255, 255, 255]);
     setPdfFont(doc, 15, "bold", green);
     doc.text(`Pedido #${order.id}`, x + width / 2, y + 10, { align: "center" });
-    const gap = 6;
-    const cardWidth = (width - gap * 2 - 8) / 3;
+    const gap = 4;
+    const cardWidth = (width - gap * 3 - 8) / 4;
     const cardY = y + 15;
     const cards = [
         ["Subtotal estimado", "de productos", formatCurrency(order.subtotal_estimated), green],
+        ["Subtotal real", "de productos", receiptSubtotalActualText(order), green],
         ["Despacho fijo", "", formatCurrency(order.delivery_fee), orange],
-        ["Total final", "o proyectado", formatCurrency(order.display_total), green],
+        ["Total", "con despacho", formatCurrency(order.display_total), green],
     ];
     cards.forEach((card, index) => {
         const cardX = x + 4 + index * (cardWidth + gap);
         drawRoundedPanel(doc, cardX, cardY, cardWidth, 22, 3.5, border, [255, 254, 251]);
-        setPdfFont(doc, 13, "bold", card[3]);
-        doc.text(card[2], cardX + 6, cardY + 8);
-        setPdfFont(doc, 8, "normal", [31, 47, 41]);
-        doc.text(card[0], cardX + 6, cardY + 15);
+        setPdfFont(doc, 11.2, "bold", card[3]);
+        doc.text(card[2], cardX + 5, cardY + 8);
+        setPdfFont(doc, 6.9, "normal", [31, 47, 41]);
+        doc.text(card[0], cardX + 5, cardY + 15);
         if (card[1]) {
-            doc.text(card[1], cardX + 6, cardY + 19);
+            doc.text(card[1], cardX + 5, cardY + 18.8);
         }
     });
 }
-
 function drawNotesBlock(doc, x, y, width, height, notes, green, border) {
     drawRoundedPanel(doc, x, y, width, height, 4, border, [255, 255, 255]);
     const columnWidth = notes.length > 1 ? (width - 8) / 2 : width - 8;
@@ -4506,18 +4508,15 @@ function drawProductsTable(doc, x, y, width, height, items, green, leafGreen, bo
 }
 
 function drawReceiptFooter(doc, x, y, width, green, orange, leafGreen) {
+    const footerWidth = width * 0.68;
+    const footerX = x + (width - footerWidth) / 2;
     doc.setFillColor(255, 250, 241);
-    doc.roundedRect(x, y, width * 0.68, 15, 4, 4, "F");
+    doc.roundedRect(footerX, y, footerWidth, 15, 4, 4, "F");
     setPdfFont(doc, 9, "normal", [31, 47, 41]);
-    doc.text("Gracias por confiar en Verdulería Isa.", x + 18, y + 6);
+    doc.text("Gracias por confiar en Verduler\u00eda Isa.", footerX + footerWidth / 2, y + 6, { align: "center" });
     setPdfFont(doc, 10, "bold", green);
-    doc.text("¡Llevamos frescura a tu mesa!", x + 18, y + 11);
-    doc.setFillColor(...leafGreen);
-    doc.ellipse(x + width - 19, y + 9, 12, 6, "F");
-    doc.setFillColor(...orange);
-    doc.circle(x + width - 5, y + 5, 1.2, "F");
+    doc.text("\u00a1Llevamos frescura a tu mesa!", footerX + footerWidth / 2, y + 11, { align: "center" });
 }
-
 function drawRoundedPanel(doc, x, y, width, height, radius, strokeColor, fillColor) {
     doc.setFillColor(...fillColor);
     doc.setDrawColor(...strokeColor);
@@ -4641,6 +4640,11 @@ function buildOrderPrintMarkup(order, includeClient) {
                         <strong>${formatCurrency(order.subtotal_estimated)}</strong>
                         <p>Subtotal estimado<br>de productos</p>
                     </article>
+                    <article class="receipt-summary-card">
+                        <span class="receipt-card-icon receipt-card-icon--real" aria-hidden="true"></span>
+                        <strong>${receiptSubtotalActualText(order)}</strong>
+                        <p>Subtotal real<br>de productos</p>
+                    </article>
                     <article class="receipt-summary-card receipt-summary-card--accent">
                         <span class="receipt-card-icon receipt-card-icon--truck" aria-hidden="true"></span>
                         <strong>${formatCurrency(order.delivery_fee)}</strong>
@@ -4649,7 +4653,7 @@ function buildOrderPrintMarkup(order, includeClient) {
                     <article class="receipt-summary-card">
                         <span class="receipt-card-icon receipt-card-icon--total" aria-hidden="true"></span>
                         <strong>${formatCurrency(order.display_total)}</strong>
-                        <p>Total final o proyectado</p>
+                        <p>Total<br>con despacho</p>
                     </article>
                 </div>
             </section>
@@ -4675,7 +4679,6 @@ function buildOrderPrintMarkup(order, includeClient) {
             </section>
 
             <footer class="receipt-footer">
-                <span class="receipt-heart" aria-hidden="true"></span>
                 <p>Gracias por confiar en Verdulería Isa.<br><strong>¡Llevamos frescura a tu mesa!</strong></p>
             </footer>
         </article>
@@ -4810,9 +4813,7 @@ function buildPrintStyles() {
             min-height: 100vh;
             margin: 0 auto;
             padding: 26px 28px 22px;
-            background:
-                radial-gradient(circle at 94% 93%, rgba(139, 195, 74, 0.22) 0 78px, transparent 79px),
-                linear-gradient(180deg, #ffffff 0%, #ffffff 68%, #fbf9f0 100%);
+            background: linear-gradient(180deg, #ffffff 0%, #ffffff 72%, #fbf9f0 100%);
             border: 1px solid #d8e8c7;
         }
         .receipt-header {
@@ -4850,16 +4851,16 @@ function buildPrintStyles() {
         .receipt-round-icon::after { content: ""; position: absolute; width: 14px; height: 14px; border: 3px solid #fff; border-radius: 50%; right: 9px; bottom: 10px; }
         .receipt-summary-panel { padding: 20px 22px; margin-bottom: 16px; }
         .receipt-summary-panel > h2 { text-align: center; color: #2d6d29; font-size: 32px; margin-bottom: 14px; }
-        .receipt-summary-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px; }
-        .receipt-summary-card { min-height: 132px; border: 1px solid #c9e3ae; border-radius: 18px; display: grid; grid-template-columns: 74px 1fr; grid-template-rows: auto auto; align-items: center; column-gap: 16px; padding: 18px; background: #fffefb; }
-        .receipt-summary-card strong { font-size: 42px; line-height: 1; color: #2b5f2a; }
-        .receipt-summary-card p { grid-column: 2; color: #1f2f29; font-size: 18px; line-height: 1.22; margin-top: 7px; }
+        .receipt-summary-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; }
+        .receipt-summary-card { min-height: 116px; border: 1px solid #c9e3ae; border-radius: 18px; display: grid; grid-template-columns: 46px 1fr; grid-template-rows: auto auto; align-items: center; column-gap: 10px; padding: 14px; background: #fffefb; }
+        .receipt-summary-card strong { font-size: 30px; line-height: 1; color: #2b5f2a; white-space: nowrap; }
+        .receipt-summary-card p { grid-column: 2; color: #1f2f29; font-size: 15px; line-height: 1.18; margin-top: 6px; }
         .receipt-summary-card--accent strong { color: #f26a0f; }
-        .receipt-card-icon { grid-row: 1 / span 2; width: 56px; height: 56px; border-radius: 50%; background: #edf6df; display: inline-block; position: relative; }
-        .receipt-card-icon::before { content: ""; position: absolute; inset: 16px; border: 3px solid #6cab38; border-radius: 3px; }
+        .receipt-card-icon { grid-row: 1 / span 2; width: 42px; height: 42px; border-radius: 50%; background: #edf6df; display: inline-block; position: relative; }
+        .receipt-card-icon::before { content: ""; position: absolute; inset: 12px; border: 3px solid #6cab38; border-radius: 3px; }
         .receipt-card-icon--truck { background: #fff1dc; }
         .receipt-card-icon--truck::before { border-color: #f26a0f; }
-        .receipt-card-icon--total::before { content: "$"; border: 0; color: #6cab38; font-weight: 800; font-size: 26px; inset: 13px 0 0; text-align: center; }
+        .receipt-card-icon--total::before { content: "$"; border: 0; color: #6cab38; font-weight: 800; font-size: 23px; inset: 10px 0 0; text-align: center; }
         .receipt-notes { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; padding: 16px 20px; margin-bottom: 16px; }
         .receipt-notes strong { color: #17412d; font-size: 18px; }
         .receipt-notes p { color: #42574b; font-size: 15px; margin-top: 6px; }
@@ -4875,8 +4876,8 @@ function buildPrintStyles() {
         td:first-child { text-align: left; }
         td:last-child, th:last-child { border-right: 0; }
         .receipt-row-leaf { margin-right: 10px; vertical-align: middle; }
-        .receipt-footer { display: grid; grid-template-columns: 96px 1fr; align-items: center; width: 68%; margin: 34px 0 0; border-radius: 20px; border: 1px solid #efe1bf; background: linear-gradient(90deg, #fffaf0, #f8f4e9); padding: 18px 24px; }
-        .receipt-footer p { font-size: 20px; text-align: center; color: #1f2f29; }
+        .receipt-footer { display: flex; align-items: center; justify-content: center; width: min(72%, 640px); margin: 34px auto 0; border-radius: 20px; border: 1px solid #efe1bf; background: linear-gradient(90deg, #fffaf0, #f8f4e9); padding: 18px 24px; }
+        .receipt-footer p { width: 100%; font-size: 20px; text-align: center; color: #1f2f29; }
         .receipt-footer strong { color: #2d6d29; }
         .receipt-heart { width: 42px; height: 32px; position: relative; display: inline-block; justify-self: center; }
         .receipt-heart::before, .receipt-heart::after { content: ""; position: absolute; width: 22px; height: 34px; border: 3px solid #2d6d29; border-bottom: 0; border-radius: 22px 22px 0 0; transform: rotate(-45deg); transform-origin: 0 100%; }
