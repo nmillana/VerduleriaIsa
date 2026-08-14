@@ -7069,3 +7069,46 @@ nav.mobile-bottom-nav.client-top-nav.has-admin {
         font-size: 0.45rem;
     }
 }
+
+/* Catalog direct submit refinement 2026-08-14 */
+.catalog-submit-panel {
+    gap: 0.62rem;
+    margin-top: 0.25rem;
+}
+
+.order-submit-actions {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.55rem;
+}
+
+.order-submit-actions .button {
+    width: 100%;
+}
+
+@media (min-width: 760px) {
+    .catalog-submit-panel .order-submit-actions {
+        grid-template-columns: minmax(0, 1fr) minmax(150px, 0.42fr);
+    }
+}
+
+@media (max-width: 760px) {
+    .catalog-submit-panel {
+        padding: 0.72rem;
+    }
+
+    .catalog-submit-panel .metric-line {
+        padding-bottom: 0.44rem;
+        font-size: 0.72rem;
+    }
+
+    .catalog-submit-panel .field-note {
+        font-size: 0.66rem;
+        line-height: 1.25;
+    }
+
+    .catalog-submit-panel .order-submit-actions .button {
+        min-height: 38px;
+        font-size: 0.76rem;
+    }
+}

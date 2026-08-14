@@ -2605,6 +2605,29 @@ function renderClientProductCard(product, selection = {}, options = {}) {
     `;
 }
 
+function renderClientOrderSubmitPanel(options = {}) {
+    const editOrderId = Number(options.editOrderId || 0);
+    const panelClass = ["panel", "cart-submit-panel", options.className || ""].filter(Boolean).join(" ");
+    const primaryLabel = editOrderId ? "Actualizar solicitud" : "Enviar pedido";
+    const statusText = options.statusText || "Revisa el detalle antes de enviar tu solicitud.";
+    const secondaryAction = options.includeCartButton
+        ? `<button class="button ghost" type="button" data-action="open-cart-review">Revisar carrito</button>`
+        : "";
+
+    return `
+        <section class="${panelClass}">
+            <div class="metric-line"><span>Productos elegidos</span><strong data-selected-count>0</strong></div>
+            <div class="metric-line"><span>Subtotal productos</span><strong data-subtotal-estimated>${formatCurrency(0)}</strong></div>
+            <div class="metric-line"><span>Despacho fijo</span><strong>${formatCurrency(DELIVERY_FEE)}</strong></div>
+            <div class="metric-line"><span>Total estimado</span><strong data-estimated-total>${formatCurrency(DELIVERY_FEE)}</strong></div>
+            <p class="field-note" data-inline-status>${e(statusText)}</p>
+            <div class="order-submit-actions">
+                <button class="button primary" type="submit" data-busy-text="Enviando...">${primaryLabel}</button>
+                ${secondaryAction}
+            </div>
+        </section>
+    `;
+}
 function renderClientBottomNav(active = "inicio") {
     const item = (key, href, label, iconClass) => {
         const activeClass = active === key ? " active" : "";
@@ -2684,7 +2707,7 @@ function renderClientOrderFormPage(products, draft, sourceOrder, editOrder, late
                     </button>
                 </header>
 
-                ${editOrder ? `<div class="badge-block">Editando pedido #${editOrder.id}</div>` : sourceOrder ? `<div class="badge-block">Basado en el pedido #${sourceOrder.id}</div>` : ""}
+                ${editOrder ? `<div class="badge-block">Editando pedido #${editOrder.id}</div>` : editOrderId ? `<div class="badge-block">Editando pedido #${editOrderId}</div>` : sourceOrder ? `<div class="badge-block">Basado en el pedido #${sourceOrder.id}</div>` : sourceOrderId ? `<div class="badge-block">Basado en el pedido #${sourceOrderId}</div>` : ""}
 
                 <section class="catalog-toolbar shop-catalog-toolbar">
                     <div class="shop-searchbar catalog-search">
@@ -2705,10 +2728,9 @@ function renderClientOrderFormPage(products, draft, sourceOrder, editOrder, late
                     <p class="empty-search" data-product-search-empty hidden>No hay productos con esa búsqueda.</p>
                     ${groupsMarkup || `<section class="empty-state"><p class="eyebrow">Catálogo</p><h2>Sin productos activos</h2><p class="muted">Puedes usar el campo Otro mientras la administradora actualiza el catálogo.</p></section>`}
                 </section>
-
                 ${notes}
 
-                <p class="field-note mobile-order-status" data-inline-status>Carrito guardado en este dispositivo. El campo Otro se revisa manualmente y no suma precio estimado.</p>
+                ${renderClientOrderSubmitPanel({ editOrderId, className: "catalog-submit-panel", includeCartButton: true, statusText: "Puedes enviar desde aqui o revisar el carrito antes de confirmar." })}
             </form>
         `;
     }
@@ -2863,11 +2885,7 @@ function renderClientCartReviewPage(products, draft) {
             return product && quantity > 0 ? { product, selection: { ...selection, quantity } } : null;
         })
         .filter(Boolean);
-    const continueHref = draft.edit_order_id
-        ? `#/cliente/pedido/nuevo?edit=${draft.edit_order_id}`
-        : draft.source_order_id
-            ? `#/cliente/pedido/nuevo?source=${draft.source_order_id}`
-            : "#/cliente/pedido/nuevo";
+    const continueHref = "#/cliente/pedido/nuevo?view=catalog";
     const cancelEditAction = draft.edit_order_id
         ? `<button class="button ghost" type="button" data-action="cancel-order-edit" data-target="/cliente/pedido/${draft.edit_order_id}">Cancelar edición</button>`
         : "";
@@ -2925,15 +2943,7 @@ function renderClientCartReviewPage(products, draft) {
                     <textarea name="client_note" rows="3" maxlength="${MAX_CLIENT_NOTE_LENGTH}" data-client-note>${e(draft.client_note || "")}</textarea>
                 </label>
             </details>
-
-            <section class="panel cart-submit-panel">
-                <div class="metric-line"><span>Productos elegidos</span><strong data-selected-count>0</strong></div>
-                <div class="metric-line"><span>Subtotal productos</span><strong data-subtotal-estimated>${formatCurrency(0)}</strong></div>
-                <div class="metric-line"><span>Despacho fijo</span><strong>${formatCurrency(DELIVERY_FEE)}</strong></div>
-                <div class="metric-line"><span>Total estimado</span><strong data-estimated-total>${formatCurrency(DELIVERY_FEE)}</strong></div>
-                <p class="field-note" data-inline-status>Revisa el detalle antes de enviar tu solicitud.</p>
-                <button class="button primary" type="submit" data-busy-text="Enviando...">Enviar solicitud</button>
-            </section>
+            ${renderClientOrderSubmitPanel({ editOrderId: draft.edit_order_id })}
         </form>
     `;
 }
