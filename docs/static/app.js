@@ -30,6 +30,7 @@ const PRODUCT_PHOTO_BASE = 'https://www.themealdb.com/images/ingredients';
 const PRODUCT_PHOTO_VARIANT = '-medium';
 const PRODUCT_IMAGE_BUCKET = 'product-images';
 const PRODUCT_STORAGE_IMAGE_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.webp'];
+const MAX_PRODUCT_IMAGE_UPLOAD_BYTES = 6 * 1024 * 1024;
 const CATEGORY_PHOTO_TERMS = {
     frutas: 'Apples',
     verduras_hortalizas: 'Carrots',
@@ -1661,8 +1662,20 @@ async function submitClientOrder(form) {
 }
 
 async function submitProductSave(form) {
-    await saveProduct(readProductFormValues(form));
-    state.flash = { tone: "notice", message: "Producto guardado." };
+    const values = readProductFormValues(form);
+    await saveProduct(values);
+
+    if (values.image_file) {
+        try {
+            await uploadProductImage(values.image_file, values);
+            state.flash = { tone: "notice", message: "Producto guardado con imagen." };
+        } catch (error) {
+            state.flash = { tone: "error", message: `Producto guardado, pero no pude subir la imagen: ${friendlyError(error)}` };
+        }
+    } else {
+        state.flash = { tone: "notice", message: "Producto guardado." };
+    }
+
     await renderCurrentRoute();
 }
 
@@ -1692,6 +1705,11 @@ function readProductFormValues(container) {
     const imageInput = container.querySelector('[name="image_url"]');
     if (imageInput) {
         values.image_url = imageInput.value || "";
+    }
+    const imageFileInput = container.querySelector('[name="image_file"]');
+    const imageFile = imageFileInput?.files?.[0] || null;
+    if (imageFile && imageFile.size > 0) {
+        values.image_file = imageFile;
     }
     return values;
 }
@@ -2347,6 +2365,68 @@ function productStorageImageUrls(product) {
 function productStorageBaseUrl() {
     const supabaseUrl = String(window.VERDULERIA_CONFIG?.SUPABASE_URL || '').replace(/\/+$/, '');
     return supabaseUrl ? `${supabaseUrl}/storage/v1/object/public/${PRODUCT_IMAGE_BUCKET}` : '';
+}
+
+async function uploadProductImage(file, values) {
+    validateProductImageFile(file);
+    const uploadPath = productImageUploadPath(file, values);
+    const options = {
+        cacheControl: '3600',
+        upsert: true,
+    };
+    if (file.type) {
+        options.contentType = file.type;
+    }
+
+    const { error } = await withSupabaseTimeout(
+        state.client.storage.from(PRODUCT_IMAGE_BUCKET).upload(uploadPath, file, options),
+        'Supabase no respondio al subir la imagen del producto.'
+    );
+    if (error) {
+        throw error;
+    }
+    return uploadPath;
+}
+
+function validateProductImageFile(file) {
+    const type = String(file?.type || '').toLowerCase();
+    const name = String(file?.name || '').toLowerCase();
+    const allowed = ['image/jpeg', 'image/png', 'image/webp'].includes(type) || /\.(jpe?g|png|webp)$/.test(name);
+    if (!allowed) {
+        throw new Error('La imagen debe ser JPG, PNG o WebP.');
+    }
+    if (file.size > MAX_PRODUCT_IMAGE_UPLOAD_BYTES) {
+        throw new Error('La imagen no puede superar 6 MB.');
+    }
+}
+
+function productImageUploadPath(file, values) {
+    return `${productImageUploadBaseName(values)}${productImageUploadExtension(file)}`;
+}
+
+function productImageUploadBaseName(values) {
+    const raw = sanitizeText(values?.display_name || values?.name, 120);
+    const withoutControls = raw.replace(/[\u0000-\u001f\u007f]/g, '').trim();
+    if (withoutControls && !/[\\/#?%*:|"<>]/.test(withoutControls)) {
+        return withoutControls;
+    }
+    return productImageSlug(raw);
+}
+
+function productImageUploadExtension(file) {
+    const name = String(file?.name || '').toLowerCase();
+    const match = name.match(/\.(jpe?g|png|webp)$/);
+    if (match) {
+        return match[1] === 'jpeg' ? '.jpg' : `.${match[1]}`;
+    }
+    const type = String(file?.type || '').toLowerCase();
+    if (type === 'image/png') {
+        return '.png';
+    }
+    if (type === 'image/webp') {
+        return '.webp';
+    }
+    return '.jpg';
 }
 
 function safeProductImageUrl(value) {
@@ -3167,7 +3247,7 @@ function renderAdminProductsPage(products) {
 
         <section class="panel">
             <h2>Agregar nuevo producto</h2>
-            <form class="inline-form grid-form" data-form="admin-product-create">
+            <form class="inline-form grid-form" data-form="admin-product-create" enctype="multipart/form-data">
                 <input type="hidden" name="product_id" value="">
                 <label>Nombre visible
                     <input type="text" name="display_name" required>
@@ -3189,7 +3269,11 @@ function renderAdminProductsPage(products) {
                         <option value="0">No</option>
                     </select>
                 </label>
-                <button class="button primary" type="submit">Guardar producto</button>
+                <label class="full-row">Imagen del producto
+                    <input type="file" name="image_file" accept="image/jpeg,image/png,image/webp">
+                </label>
+                <p class="field-note full-row" data-inline-status>Opcional: JPG, PNG o WebP hasta 6 MB. Se guarda en el bucket product-images con el nombre visible del producto.</p>
+                <button class="button primary" type="submit" data-busy-text="Guardando...">Guardar producto</button>
             </form>
         </section>
 
@@ -3515,7 +3599,7 @@ function renderSetupPanel(extraMessage = "") {
             ${extraMessage ? `<div class="error-box"><p>${e(extraMessage)}</p></div>` : ""}
             <div class="list-grid">
                 <p>1. Completa <code>docs/static/config.js</code> con tu <code>SUPABASE_ANON_KEY</code>.</p>
-                <p>2. Ejecuta <code>supabase/sql/009_github_pages_auth.sql</code>, <code>supabase/sql/011_admin_first_login_setup.sql</code>, <code>supabase/sql/012_catalog_units_other_request.sql</code>, <code>supabase/sql/013_client_registration_repair.sql</code>, <code>supabase/sql/014_product_classification_presentation.sql</code>, <code>supabase/sql/015_product_images_and_order_edit.sql</code>, <code>supabase/sql/016_admin_email_allowlist.sql</code>, <code>supabase/sql/017_admin_manual_clients.sql</code> y <code>supabase/sql/018_add_seafood_category.sql</code> en el SQL Editor.</p>
+                <p>2. Ejecuta <code>supabase/sql/009_github_pages_auth.sql</code>, <code>supabase/sql/011_admin_first_login_setup.sql</code>, <code>supabase/sql/012_catalog_units_other_request.sql</code>, <code>supabase/sql/013_client_registration_repair.sql</code>, <code>supabase/sql/014_product_classification_presentation.sql</code>, <code>supabase/sql/015_product_images_and_order_edit.sql</code>, <code>supabase/sql/016_admin_email_allowlist.sql</code>, <code>supabase/sql/017_admin_manual_clients.sql</code>, <code>supabase/sql/018_add_seafood_category.sql</code> y <code>supabase/sql/019_product_image_upload_policy.sql</code> en el SQL Editor.</p>
                 <p>3. Crea las administradoras en Supabase Auth con la clave temporal acordada.</p>
                 <p>4. Publica la carpeta <code>docs/</code> desde GitHub Pages.</p>
             </div>
@@ -3533,7 +3617,7 @@ function renderErrorView(error) {
                 <p>${e(friendlyError(error))}</p>
             </div>
             <div class="list-grid">
-                <p>Archivos clave: <code>supabase/sql/009_github_pages_auth.sql</code>, <code>supabase/sql/011_admin_first_login_setup.sql</code>, <code>supabase/sql/012_catalog_units_other_request.sql</code>, <code>supabase/sql/013_client_registration_repair.sql</code>, <code>supabase/sql/014_product_classification_presentation.sql</code>, <code>supabase/sql/015_product_images_and_order_edit.sql</code>, <code>supabase/sql/016_admin_email_allowlist.sql</code>, <code>supabase/sql/017_admin_manual_clients.sql</code> y <code>supabase/sql/018_add_seafood_category.sql</code></p>
+                <p>Archivos clave: <code>supabase/sql/009_github_pages_auth.sql</code>, <code>supabase/sql/011_admin_first_login_setup.sql</code>, <code>supabase/sql/012_catalog_units_other_request.sql</code>, <code>supabase/sql/013_client_registration_repair.sql</code>, <code>supabase/sql/014_product_classification_presentation.sql</code>, <code>supabase/sql/015_product_images_and_order_edit.sql</code>, <code>supabase/sql/016_admin_email_allowlist.sql</code>, <code>supabase/sql/017_admin_manual_clients.sql</code>, <code>supabase/sql/018_add_seafood_category.sql</code> y <code>supabase/sql/019_product_image_upload_policy.sql</code></p>
                 <p>Config pública: <code>docs/static/config.js</code></p>
                 <p>Publicación: GitHub Pages apuntando a la carpeta <code>docs/</code></p>
             </div>
@@ -5305,6 +5389,9 @@ function friendlyError(error) {
     }
     if (/column .*display_name.*does not exist|column .*presentation.*does not exist|products_category_check|invalid input value .*products/i.test(raw)) {
         return "Falta ejecutar supabase/sql/014_product_classification_presentation.sql y supabase/sql/018_add_seafood_category.sql en Supabase para activar las categorias disponibles.";
+    }
+    if (/product-images|storage|bucket|object/i.test(raw) && /permisos RLS|row-level security|permission denied|not found|unauthorized|forbidden|403|401|upload/i.test(raw)) {
+        return "No pude subir la imagen al bucket product-images. Ejecuta supabase/sql/019_product_image_upload_policy.sql y confirma que el bucket exista.";
     }
     if (/column .*client_note.*does not exist|column .*other_request.*does not exist|column .*requested_unit.*does not exist|function .*create_secure_order/i.test(raw)) {
         return "Falta ejecutar supabase/sql/012_catalog_units_other_request.sql en Supabase. Abre el archivo, copia todo su contenido y pegalo en el SQL Editor; no pegues solo el nombre del archivo.";

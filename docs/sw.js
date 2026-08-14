@@ -1,4 +1,4 @@
-const CACHE_NAME = "verduleria-isa-pwa-v20260814-seafood-category";
+const CACHE_NAME = "verduleria-isa-pwa-v20260814-product-image-upload";
 
 self.addEventListener("install", (event) => {
     self.skipWaiting();
