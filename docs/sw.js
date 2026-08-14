@@ -1,4 +1,4 @@
-const CACHE_NAME = "verduleria-isa-pwa-v20260810-whatsapp-direct-contact";
+const CACHE_NAME = "verduleria-isa-pwa-v20260814-seafood-category";
 
 self.addEventListener("install", (event) => {
     self.skipWaiting();

@@ -6,6 +6,7 @@ const CATEGORY_CHOICES = [
     ["listos_cocinar", "Listos para cocinar"],
     ["legumbres_frutos_aceitunas", "Legumbres, frutos secos y aceitunas"],
     ["huevos_despensa", "Huevos y despensa"],
+    ["pescados_mariscos", "Pescados / mariscos"],
 ];
 
 const CATEGORY_LABELS = Object.fromEntries(CATEGORY_CHOICES);
@@ -37,6 +38,7 @@ const CATEGORY_PHOTO_TERMS = {
     listos_cocinar: 'Mixed Peppers',
     legumbres_frutos_aceitunas: 'Chickpeas',
     huevos_despensa: 'Eggs',
+    pescados_mariscos: 'Salmon',
 };
 const PRODUCT_PHOTO_TERMS = [
     [/chirimoya|cherimoya/, 'Pears'],
@@ -123,6 +125,8 @@ const PRODUCT_PHOTO_TERMS = [
     [/almendra|almond/, 'Almonds'],
     [/nuez|nueces|walnut/, 'Walnuts'],
     [/mani|peanut/, 'Peanuts'],
+    [/pescado|fish|salmon|atun|reineta|merluza|congrio/, 'Salmon'],
+    [/marisco|shrimp|camaron|chorito|macha|almeja|ostion|jaiba|locos/, 'Shrimp'],
     [/huevo de codorniz|quail egg/, 'Eggs'],
     [/huevo|egg/, 'Eggs'],
     [/miel|honey/, 'Honey'],
@@ -2593,6 +2597,7 @@ function renderClientOrderFormPage(products, draft, sourceOrder, editOrder, late
                     <button class="category-chip" type="button" data-action="focus-category" data-target="cat-${e(productImageSlug("frutas"))}" data-category-nav="frutas">Frutas</button>
                     <button class="category-chip" type="button" data-action="focus-category" data-target="cat-${e(productImageSlug("verduras_hortalizas"))}" data-category-nav="verduras_hortalizas">Verduras</button>
                     <button class="category-chip" type="button" data-action="focus-category" data-target="cat-${e(productImageSlug("listos_cocinar"))}" data-category-nav="listos_cocinar">Listos <span class="client-icon client-icon-bowl" aria-hidden="true"></span></button>
+                    <button class="category-chip" type="button" data-action="focus-category" data-target="cat-${e(productImageSlug("pescados_mariscos"))}" data-category-nav="pescados_mariscos">Pescados / mariscos</button>
                     <button class="category-chip" type="button" data-action="focus-category" data-target="client-order-notes"><span class="client-icon client-icon-sliders" aria-hidden="true"></span>Más filtros</button>
                 </nav>
 
@@ -3510,7 +3515,7 @@ function renderSetupPanel(extraMessage = "") {
             ${extraMessage ? `<div class="error-box"><p>${e(extraMessage)}</p></div>` : ""}
             <div class="list-grid">
                 <p>1. Completa <code>docs/static/config.js</code> con tu <code>SUPABASE_ANON_KEY</code>.</p>
-                <p>2. Ejecuta <code>supabase/sql/009_github_pages_auth.sql</code>, <code>supabase/sql/011_admin_first_login_setup.sql</code>, <code>supabase/sql/012_catalog_units_other_request.sql</code>, <code>supabase/sql/013_client_registration_repair.sql</code>, <code>supabase/sql/014_product_classification_presentation.sql</code>, <code>supabase/sql/015_product_images_and_order_edit.sql</code>, <code>supabase/sql/016_admin_email_allowlist.sql</code> y <code>supabase/sql/017_admin_manual_clients.sql</code> en el SQL Editor.</p>
+                <p>2. Ejecuta <code>supabase/sql/009_github_pages_auth.sql</code>, <code>supabase/sql/011_admin_first_login_setup.sql</code>, <code>supabase/sql/012_catalog_units_other_request.sql</code>, <code>supabase/sql/013_client_registration_repair.sql</code>, <code>supabase/sql/014_product_classification_presentation.sql</code>, <code>supabase/sql/015_product_images_and_order_edit.sql</code>, <code>supabase/sql/016_admin_email_allowlist.sql</code>, <code>supabase/sql/017_admin_manual_clients.sql</code> y <code>supabase/sql/018_add_seafood_category.sql</code> en el SQL Editor.</p>
                 <p>3. Crea las administradoras en Supabase Auth con la clave temporal acordada.</p>
                 <p>4. Publica la carpeta <code>docs/</code> desde GitHub Pages.</p>
             </div>
@@ -3528,7 +3533,7 @@ function renderErrorView(error) {
                 <p>${e(friendlyError(error))}</p>
             </div>
             <div class="list-grid">
-                <p>Archivos clave: <code>supabase/sql/009_github_pages_auth.sql</code>, <code>supabase/sql/011_admin_first_login_setup.sql</code>, <code>supabase/sql/012_catalog_units_other_request.sql</code>, <code>supabase/sql/013_client_registration_repair.sql</code>, <code>supabase/sql/014_product_classification_presentation.sql</code>, <code>supabase/sql/015_product_images_and_order_edit.sql</code>, <code>supabase/sql/016_admin_email_allowlist.sql</code> y <code>supabase/sql/017_admin_manual_clients.sql</code></p>
+                <p>Archivos clave: <code>supabase/sql/009_github_pages_auth.sql</code>, <code>supabase/sql/011_admin_first_login_setup.sql</code>, <code>supabase/sql/012_catalog_units_other_request.sql</code>, <code>supabase/sql/013_client_registration_repair.sql</code>, <code>supabase/sql/014_product_classification_presentation.sql</code>, <code>supabase/sql/015_product_images_and_order_edit.sql</code>, <code>supabase/sql/016_admin_email_allowlist.sql</code>, <code>supabase/sql/017_admin_manual_clients.sql</code> y <code>supabase/sql/018_add_seafood_category.sql</code></p>
                 <p>Config pública: <code>docs/static/config.js</code></p>
                 <p>Publicación: GitHub Pages apuntando a la carpeta <code>docs/</code></p>
             </div>
@@ -5299,7 +5304,7 @@ function friendlyError(error) {
         return "Falta ejecutar supabase/sql/015_product_images_and_order_edit.sql en Supabase para editar imágenes y actualizar solicitudes pendientes.";
     }
     if (/column .*display_name.*does not exist|column .*presentation.*does not exist|products_category_check|invalid input value .*products/i.test(raw)) {
-        return "Falta ejecutar supabase/sql/014_product_classification_presentation.sql en Supabase para activar las categorías nuevas y la presentación limpia.";
+        return "Falta ejecutar supabase/sql/014_product_classification_presentation.sql y supabase/sql/018_add_seafood_category.sql en Supabase para activar las categorias disponibles.";
     }
     if (/column .*client_note.*does not exist|column .*other_request.*does not exist|column .*requested_unit.*does not exist|function .*create_secure_order/i.test(raw)) {
         return "Falta ejecutar supabase/sql/012_catalog_units_other_request.sql en Supabase. Abre el archivo, copia todo su contenido y pegalo en el SQL Editor; no pegues solo el nombre del archivo.";
