@@ -1,4 +1,4 @@
-const CACHE_NAME = "verduleria-isa-pwa-v20260814-desktop-density";
+const CACHE_NAME = "verduleria-isa-pwa-v20260821-client-password-reset";
 
 self.addEventListener("install", (event) => {
     self.skipWaiting();

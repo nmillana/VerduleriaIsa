@@ -290,21 +290,24 @@ async function resolveRoute(route) {
             return redirectView(target, "", "notice", "Abriendo panel administrador...");
         }
         if (state.role === "client") {
-            return redirectView("/cliente/pedido/nuevo", "", "notice", "Abriendo catálogo...");
+            const target = state.profile?.must_reset_password ? "/cliente/cambiar-clave" : "/cliente/pedido/nuevo";
+            return redirectView(target, "", "notice", "Abriendo catálogo...");
         }
         return { title: "Acceso", content: renderHomePage() };
     }
 
     if (route.path === "/registro") {
         if (state.role === "client") {
-            return redirectView("/cliente/pedido/nuevo", "", "notice", "Abriendo catálogo...");
+            const target = state.profile?.must_reset_password ? "/cliente/cambiar-clave" : "/cliente/pedido/nuevo";
+            return redirectView(target, "", "notice", "Abriendo catálogo...");
         }
         return { title: "Registro", content: renderClientRegisterPage() };
     }
 
     if (route.path === "/login-cliente") {
         if (state.role === "client") {
-            return redirectView("/cliente/pedido/nuevo", "", "notice", "Abriendo catálogo...");
+            const target = state.profile?.must_reset_password ? "/cliente/cambiar-clave" : "/cliente/pedido/nuevo";
+            return redirectView(target, "", "notice", "Abriendo catálogo...");
         }
         return { title: "Ingreso clienta", content: renderClientLoginPage() };
     }
@@ -333,6 +336,18 @@ async function resolveRoute(route) {
         if (state.profile?.must_reset_password) {
             return redirectView("/admin/cambiar-clave", "Primero define una nueva contraseña.", "notice");
         }
+    }
+
+    if (route.path === "/cliente/cambiar-clave") {
+        const redirect = requireRole("client", "/login-cliente", "Debes ingresar como clienta.");
+        if (redirect) {
+            return redirect;
+        }
+        return { title: "Nueva clave", content: renderClientPasswordResetPage(state.profile) };
+    }
+
+    if (route.path.startsWith("/cliente/") && state.role === "client" && state.profile?.must_reset_password) {
+        return redirectView("/cliente/cambiar-clave", "Primero crea una nueva contraseña para continuar.", "notice");
     }
 
     if (route.path === "/cliente/dashboard") {
@@ -724,7 +739,7 @@ async function fetchClientsWithOrderCounts() {
     const clients = (await runQuery(
         state.client
             .from("clients")
-            .select("id,name,email,phone,address,billing_type,auth_user_id,created_at,updated_at,last_login_at")
+            .select(clientProfileFields())
             .order("name")
     )).map(normalizeClient);
 
@@ -838,7 +853,7 @@ async function fetchClientsByIds(clientIds) {
     const rows = await runQuery(
         state.client
             .from("clients")
-            .select("id,name,email,phone,address,billing_type,auth_user_id,created_at,updated_at,last_login_at")
+            .select(clientProfileFields())
             .in("id", uniqueIds)
     );
 
@@ -1244,11 +1259,17 @@ async function handleSubmit(event) {
             case "admin-password-reset":
                 await submitAdminPasswordReset(form);
                 break;
+            case "client-password-reset":
+                await submitClientPasswordReset(form);
+                break;
             case "client-profile-update":
                 await submitClientProfile(form);
                 break;
             case "client-order-create":
                 await submitClientOrder(form);
+                break;
+            case "admin-client-create":
+                await submitAdminClientCreate(form);
                 break;
             case "admin-product-create":
             case "admin-product-update":
@@ -1309,6 +1330,9 @@ async function handleClick(event) {
                 break;
             case "export-products":
                 await exportProductsXls();
+                break;
+            case "reset-client-password":
+                await resetClientPassword(Number(actionNode.dataset.clientId), actionNode.dataset.clientName, actionNode.dataset.clientEmail);
                 break;
             case "open-whatsapp":
                 await openWhatsAppForOrder(Number(actionNode.dataset.orderId));
@@ -1523,6 +1547,12 @@ async function submitClientLogin(form) {
         throw new Error(buildRoleLinkError("client", email));
     }
 
+    if (state.profile?.must_reset_password) {
+        state.flash = { tone: "notice", message: "Ingresa una nueva contraseña para continuar." };
+        navigate("/cliente/cambiar-clave", true);
+        return;
+    }
+
     state.flash = { tone: "notice", message: "Bienvenida de vuelta." };
     navigate("/cliente/pedido/nuevo", true);
 }
@@ -1619,6 +1649,44 @@ async function submitAdminPasswordReset(form) {
     navigate("/admin/dashboard", true);
 }
 
+async function submitClientPasswordReset(form) {
+    const formData = new FormData(form);
+    const password = String(formData.get("new_password") || "");
+    const confirmPassword = String(formData.get("confirm_password") || "");
+
+    if (password.length < 8) {
+        throw new Error("La nueva contraseña debe tener al menos 8 caracteres.");
+    }
+    if (password.toLowerCase() === TEMP_ADMIN_PASSWORD) {
+        throw new Error("Elige una contraseña distinta a la temporal.");
+    }
+    if (password !== confirmPassword) {
+        throw new Error("Las contraseñas no coinciden.");
+    }
+
+    const { error } = await withSupabaseTimeout(
+        state.client.auth.updateUser({ password }),
+        "Supabase no respondió al actualizar la contraseña. Revisa la conexión e intenta nuevamente."
+    );
+    if (error) {
+        throw error;
+    }
+
+    const now = new Date().toISOString();
+    const updatedRows = await runQuery(
+        state.client
+            .from("clients")
+            .update({ must_reset_password: false, password_reset_at: now })
+            .eq("id", state.profile.id)
+            .select(clientProfileFields())
+    );
+
+    const client = normalizeClient(updatedRows[0] || { ...state.profile, must_reset_password: false, password_reset_at: now });
+    setActiveProfile("client", client);
+    state.flash = { tone: "notice", message: "Contraseña actualizada. Ya puedes hacer pedidos." };
+    navigate("/cliente/pedido/nuevo", true);
+}
+
 async function submitClientProfile(form) {
     const formData = new FormData(form);
     await updateClientProfile({
@@ -1643,6 +1711,59 @@ async function submitAdminClientCreate(form) {
     form.reset();
     state.flash = { tone: 'notice', message: 'Clienta ' + client.name + ' creada manualmente.' };
     await renderCurrentRoute();
+}
+
+async function resetClientPassword(clientId, clientName, clientEmail) {
+    if (state.role !== "admin" || !canShowAdminAccess()) {
+        throw new Error("Debes ingresar como administradora para resetear claves.");
+    }
+    if (!clientId) {
+        throw new Error("No pude identificar la clienta.");
+    }
+    if (!state.session?.access_token) {
+        throw new Error("Debes tener una sesión administradora activa.");
+    }
+
+    const label = clientName || clientEmail || `clienta #${clientId}`;
+    const confirmed = typeof window.confirm === "function"
+        ? window.confirm(`La clave temporal de ${label} quedará como ${TEMP_ADMIN_PASSWORD}. Al ingresar, la app le pedirá crear una nueva contraseña. ¿Continuar?`)
+        : true;
+    if (!confirmed) {
+        return;
+    }
+
+    const { data, error } = await withSupabaseTimeout(
+        state.client.functions.invoke("admin-reset-client-password", {
+            body: { client_id: clientId, temporary_password: TEMP_ADMIN_PASSWORD },
+        }),
+        "Supabase no respondió al resetear la contraseña de la clienta."
+    );
+    if (error) {
+        const detail = await functionErrorMessage(error);
+        throw new Error(detail || error.message);
+    }
+    if (!data?.ok) {
+        throw new Error(data?.error || "No pude resetear la contraseña de la clienta.");
+    }
+
+    const temporaryPassword = data.temporary_password || TEMP_ADMIN_PASSWORD;
+    state.flash = {
+        tone: "notice",
+        message: `Clave temporal de ${label}: ${temporaryPassword}. Debe ingresar y crear una nueva contraseña.`,
+    };
+    await renderCurrentRoute();
+}
+
+async function functionErrorMessage(error) {
+    try {
+        if (error?.context && typeof error.context.json === "function") {
+            const payload = await error.context.json();
+            return payload?.error || payload?.message || "";
+        }
+    } catch (parseError) {
+        console.error(parseError);
+    }
+    return error?.message || "";
 }
 
 async function submitClientOrder(form) {
@@ -2196,6 +2317,29 @@ function renderAdminPasswordResetPage(admin) {
                     <input type="password" name="confirm_password" minlength="8" autocomplete="new-password" required>
                 </label>
                 <button class="button primary" type="submit">Guardar nueva contraseña</button>
+            </form>
+        </section>
+    `;
+}
+
+function renderClientPasswordResetPage(client) {
+    return `
+        <section class="form-panel narrow auth-panel">
+            <div class="access-card__logo-wrap compact">
+                <img class="access-card__logo" src="./static/logo-verduleria-isa.png" alt="${e(APP_NAME)}">
+            </div>
+            <p class="eyebrow">Clave temporal</p>
+            <h1>Crea tu nueva contraseña</h1>
+            <p class="muted">${e(client.email)} ingresó con una clave temporal. Define una nueva para proteger tu cuenta.</p>
+            <form class="stacked-form" data-form="client-password-reset">
+                <label>Nueva contraseña
+                    <input type="password" name="new_password" minlength="8" autocomplete="new-password" required>
+                </label>
+                <label>Confirmar contraseña
+                    <input type="password" name="confirm_password" minlength="8" autocomplete="new-password" required>
+                </label>
+                <p class="field-note" data-inline-status>No uses la clave temporal.</p>
+                <button class="button primary" type="submit" data-busy-text="Guardando...">Guardar nueva contraseña</button>
             </form>
         </section>
     `;
@@ -3383,7 +3527,7 @@ function renderAdminClientsPage(clients) {
         <section class='panel'>
             <table class='data-table'>
                 <thead>
-                    <tr><th>Nombre</th><th>Correo</th><th>Teléfono</th><th>Dirección</th><th>Pedidos</th><th>Pago</th><th>Origen</th></tr>
+                    <tr><th>Nombre</th><th>Correo</th><th>Teléfono</th><th>Dirección</th><th>Pedidos</th><th>Pago</th><th>Origen</th><th>Clave</th><th>Acción</th></tr>
                 </thead>
                 <tbody>
                     ${clients.length ? clients.map((client) => `
@@ -3395,8 +3539,10 @@ function renderAdminClientsPage(clients) {
                             <td>${client.order_count}</td>
                             <td>${e(client.billing_type || 'semanal')}</td>
                             <td>${client.auth_user_id ? 'App' : 'Manual'}</td>
+                            <td>${client.auth_user_id ? (client.must_reset_password ? `<span class='status-pill' data-status='pendiente'>Debe cambiar</span>` : `<span class='status-pill' data-status='pagado'>Activa</span>`) : `<span class='muted'>Sin acceso</span>`}</td>
+                            <td>${client.auth_user_id ? `<button class='button ghost table-action-button' type='button' data-action='reset-client-password' data-client-id='${client.id}' data-client-name='${e(client.name)}' data-client-email='${e(client.email)}'>Resetear clave</button>` : `<span class='muted'>Crear acceso desde registro</span>`}</td>
                         </tr>
-                    `).join(String()) : `<tr><td colspan='7'>Aún no hay clientas registradas.</td></tr>`}
+                    `).join(String()) : `<tr><td colspan='9'>Aún no hay clientas registradas.</td></tr>`}
                 </tbody>
             </table>
         </section>
@@ -3627,9 +3773,10 @@ function renderSetupPanel(extraMessage = "") {
             ${extraMessage ? `<div class="error-box"><p>${e(extraMessage)}</p></div>` : ""}
             <div class="list-grid">
                 <p>1. Completa <code>docs/static/config.js</code> con tu <code>SUPABASE_ANON_KEY</code>.</p>
-                <p>2. Ejecuta <code>supabase/sql/009_github_pages_auth.sql</code>, <code>supabase/sql/011_admin_first_login_setup.sql</code>, <code>supabase/sql/012_catalog_units_other_request.sql</code>, <code>supabase/sql/013_client_registration_repair.sql</code>, <code>supabase/sql/014_product_classification_presentation.sql</code>, <code>supabase/sql/015_product_images_and_order_edit.sql</code>, <code>supabase/sql/016_admin_email_allowlist.sql</code>, <code>supabase/sql/017_admin_manual_clients.sql</code>, <code>supabase/sql/018_add_seafood_category.sql</code> y <code>supabase/sql/019_product_image_upload_policy.sql</code> en el SQL Editor.</p>
-                <p>3. Crea las administradoras en Supabase Auth con la clave temporal acordada.</p>
-                <p>4. Publica la carpeta <code>docs/</code> desde GitHub Pages.</p>
+                <p>2. Ejecuta <code>supabase/sql/009_github_pages_auth.sql</code>, <code>supabase/sql/011_admin_first_login_setup.sql</code>, <code>supabase/sql/012_catalog_units_other_request.sql</code>, <code>supabase/sql/013_client_registration_repair.sql</code>, <code>supabase/sql/014_product_classification_presentation.sql</code>, <code>supabase/sql/015_product_images_and_order_edit.sql</code>, <code>supabase/sql/016_admin_email_allowlist.sql</code>, <code>supabase/sql/017_admin_manual_clients.sql</code>, <code>supabase/sql/018_add_seafood_category.sql</code>, <code>supabase/sql/019_product_image_upload_policy.sql</code> y <code>supabase/sql/020_client_password_reset_flow.sql</code> en el SQL Editor.</p>
+                <p>3. Despliega la Edge Function <code>admin-reset-client-password</code> para que administración pueda resetear claves de clientas.</p>
+                <p>4. Crea las administradoras en Supabase Auth con la clave temporal acordada.</p>
+                <p>5. Publica la carpeta <code>docs/</code> desde GitHub Pages.</p>
             </div>
         </section>
     `;
@@ -3645,7 +3792,8 @@ function renderErrorView(error) {
                 <p>${e(friendlyError(error))}</p>
             </div>
             <div class="list-grid">
-                <p>Archivos clave: <code>supabase/sql/009_github_pages_auth.sql</code>, <code>supabase/sql/011_admin_first_login_setup.sql</code>, <code>supabase/sql/012_catalog_units_other_request.sql</code>, <code>supabase/sql/013_client_registration_repair.sql</code>, <code>supabase/sql/014_product_classification_presentation.sql</code>, <code>supabase/sql/015_product_images_and_order_edit.sql</code>, <code>supabase/sql/016_admin_email_allowlist.sql</code>, <code>supabase/sql/017_admin_manual_clients.sql</code>, <code>supabase/sql/018_add_seafood_category.sql</code> y <code>supabase/sql/019_product_image_upload_policy.sql</code></p>
+                <p>Archivos clave: <code>supabase/sql/009_github_pages_auth.sql</code>, <code>supabase/sql/011_admin_first_login_setup.sql</code>, <code>supabase/sql/012_catalog_units_other_request.sql</code>, <code>supabase/sql/013_client_registration_repair.sql</code>, <code>supabase/sql/014_product_classification_presentation.sql</code>, <code>supabase/sql/015_product_images_and_order_edit.sql</code>, <code>supabase/sql/016_admin_email_allowlist.sql</code>, <code>supabase/sql/017_admin_manual_clients.sql</code>, <code>supabase/sql/018_add_seafood_category.sql</code>, <code>supabase/sql/019_product_image_upload_policy.sql</code> y <code>supabase/sql/020_client_password_reset_flow.sql</code></p>
+                <p>Función Edge: <code>supabase/functions/admin-reset-client-password</code> desplegada en Supabase.</p>
                 <p>Config pública: <code>docs/static/config.js</code></p>
                 <p>Publicación: GitHub Pages apuntando a la carpeta <code>docs/</code></p>
             </div>
@@ -5184,6 +5332,8 @@ function normalizeClient(row) {
         address: String(row.address || ""),
         billing_type: row.billing_type === "mensual" ? "mensual" : "semanal",
         auth_user_id: row.auth_user_id || "",
+        must_reset_password: Boolean(row.must_reset_password),
+        password_reset_at: row.password_reset_at || null,
         created_at: row.created_at || "",
         updated_at: row.updated_at || "",
         last_login_at: row.last_login_at || null,
@@ -5259,7 +5409,7 @@ function decorateOrderTotals(order) {
 }
 
 function clientProfileFields() {
-    return "id,name,email,phone,address,billing_type,auth_user_id,created_at,updated_at,last_login_at";
+    return "id,name,email,phone,address,billing_type,auth_user_id,must_reset_password,password_reset_at,created_at,updated_at,last_login_at";
 }
 
 function normalizeRole(role) {
@@ -5404,6 +5554,12 @@ async function fetchSingleRow(query) {
 
 function friendlyError(error) {
     const raw = typeof error === "string" ? error : error?.message || "Ocurrió un problema inesperado.";
+    if (/clients/i.test(raw) && /must_reset_password|password_reset_at/i.test(raw)) {
+        return "Falta ejecutar supabase/sql/020_client_password_reset_flow.sql en Supabase para activar el reseteo de claves de clientas.";
+    }
+    if (/admin-reset-client-password|FunctionsHttpError|Edge Function|non-2xx|function.*not found/i.test(raw)) {
+        return "Falta desplegar la Edge Function admin-reset-client-password en Supabase, o la función respondió con error.";
+    }
     if (/must_reset_password|password_reset_at/i.test(raw)) {
         return "Falta ejecutar supabase/sql/011_admin_first_login_setup.sql en Supabase para activar el primer ingreso administrador.";
     }

@@ -87,6 +87,11 @@ Esta version ya no depende del backend Flask y usa:
 - `supabase/sql/014_product_classification_presentation.sql` para limpiar categorias y presentaciones
 - `supabase/sql/015_product_images_and_order_edit.sql` para fotos editables y edicion de pedidos pendientes
 - `supabase/sql/016_admin_email_allowlist.sql` para permitir administración solo a Isabel y Natalia
+- `supabase/sql/017_admin_manual_clients.sql` para crear clientas manuales desde administración
+- `supabase/sql/018_add_seafood_category.sql` para habilitar Pescados / mariscos
+- `supabase/sql/019_product_image_upload_policy.sql` para subir imagenes al bucket `product-images`
+- `supabase/sql/020_client_password_reset_flow.sql` para obligar cambio de clave temporal en clientas
+- `supabase/functions/admin-reset-client-password` para resetear contraseñas de clientas desde el panel admin
 
 Pasos:
 
@@ -99,7 +104,12 @@ Pasos:
 7. Ejecuta `supabase/sql/014_product_classification_presentation.sql` en Supabase
 8. Ejecuta `supabase/sql/015_product_images_and_order_edit.sql` en Supabase
 9. Ejecuta `supabase/sql/016_admin_email_allowlist.sql` en Supabase
-10. Publica GitHub Pages apuntando a la carpeta `docs/`
+10. Ejecuta `supabase/sql/017_admin_manual_clients.sql` en Supabase
+11. Ejecuta `supabase/sql/018_add_seafood_category.sql` en Supabase
+12. Ejecuta `supabase/sql/019_product_image_upload_policy.sql` en Supabase
+13. Ejecuta `supabase/sql/020_client_password_reset_flow.sql` en Supabase
+14. Despliega la función con `supabase functions deploy admin-reset-client-password`
+15. Publica GitHub Pages apuntando a la carpeta `docs/`
 
 En el SQL Editor debes abrir el archivo `.sql`, copiar todo su contenido y pegarlo en Supabase. No pegues solo la ruta como `supabase/sql/012_catalog_units_other_request.sql`, porque Supabase lo interpreta como SQL y devuelve error de sintaxis.
 

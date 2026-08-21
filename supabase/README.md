@@ -21,6 +21,11 @@ Esta carpeta deja preparado el backend de datos para que la app use Supabase en 
 - `sql/014_product_classification_presentation.sql`: limpia categorias visibles y presentaciones.
 - `sql/015_product_images_and_order_edit.sql`: agrega fotos reales editables y permite editar pedidos pendientes.
 - `sql/016_admin_email_allowlist.sql`: permite administración solo a `isabelsoledadster@gmail.com` y `nataliamillanassler@gmail.com`.
+- `sql/017_admin_manual_clients.sql`: permite crear clientas manuales desde administración.
+- `sql/018_add_seafood_category.sql`: agrega la categoria pescados/mariscos.
+- `sql/019_product_image_upload_policy.sql`: habilita subida de imagenes al bucket `product-images`.
+- `sql/020_client_password_reset_flow.sql`: agrega el estado para obligar cambio de contraseña de clientas.
+- `functions/admin-reset-client-password`: resetea claves de clientas usando la service role key solo dentro de Supabase Edge Functions.
 - `.env.example`: variables necesarias para que la app apunte a Supabase.
 
 ## Como configurarlo en tu Supabase
@@ -66,6 +71,11 @@ Para activarla:
 7. Ejecuta `sql/014_product_classification_presentation.sql`
 8. Ejecuta `sql/015_product_images_and_order_edit.sql`
 9. Ejecuta `sql/016_admin_email_allowlist.sql`
+10. Ejecuta `sql/017_admin_manual_clients.sql`
+11. Ejecuta `sql/018_add_seafood_category.sql`
+12. Ejecuta `sql/019_product_image_upload_policy.sql`
+13. Ejecuta `sql/020_client_password_reset_flow.sql`
+14. Despliega `functions/admin-reset-client-password` con `supabase functions deploy admin-reset-client-password`
 
 En el SQL Editor copia y pega el contenido completo del archivo `.sql`; no pegues solo la ruta del archivo.
 
