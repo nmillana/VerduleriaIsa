@@ -7327,3 +7327,55 @@ nav.mobile-bottom-nav.client-top-nav.has-admin {
         min-height: 204px;
     }
 }
+
+
+/* Admin post-order item adjustment */
+.admin-extra-items {
+    display: grid;
+    gap: 0.8rem;
+    padding-top: 0.75rem;
+    border-top: 1px solid rgba(20, 105, 76, 0.1);
+}
+
+.admin-extra-items h2 {
+    margin: 0;
+}
+
+.admin-extra-items-grid {
+    display: grid;
+    gap: 0.65rem;
+}
+
+.admin-extra-item-row {
+    display: grid;
+    grid-template-columns: minmax(180px, 1.45fr) 90px 108px 132px minmax(150px, 1fr);
+    gap: 0.55rem;
+    align-items: end;
+    padding: 0.7rem;
+    border: 1px solid rgba(20, 105, 76, 0.12);
+    border-radius: 12px;
+    background: rgba(248, 252, 246, 0.72);
+}
+
+.admin-extra-item-row label {
+    gap: 0.28rem;
+    font-size: 0.82rem;
+}
+
+.admin-extra-item-row input,
+.admin-extra-item-row select {
+    min-height: 38px;
+    padding: 0.52rem 0.62rem;
+    font-size: 0.9rem;
+}
+
+@media (max-width: 760px) {
+    .admin-extra-item-row {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .admin-extra-item-row .extra-name,
+    .admin-extra-item-row .extra-note {
+        grid-column: 1 / -1;
+    }
+}

@@ -1152,7 +1152,7 @@ function withoutImageUrl(payload) {
     return copy;
 }
 
-async function updateOrderActuals(orderId, status, adminNote, itemUpdates) {
+async function updateOrderActuals(orderId, status, adminNote, itemUpdates, extraItems = []) {
     for (const item of itemUpdates) {
         const wasMissing = Boolean(item.was_missing);
         const numericPrice = Math.round(Number(item.actual_price));
@@ -1179,6 +1179,31 @@ async function updateOrderActuals(orderId, status, adminNote, itemUpdates) {
                 .select("id")
         );
     }
+
+    for (const item of extraItems) {
+        const quantity = normalizeQuantity(item.quantity);
+        const actualPrice = Math.max(0, Math.round(Number(item.actual_price) || 0));
+        const actualTotal = Math.round(actualPrice * quantity);
+        await runQuery(
+            state.client
+                .from("order_items")
+                .insert({
+                    order_id: orderId,
+                    product_id: null,
+                    product_name: sanitizeText(item.product_name, 120),
+                    quantity,
+                    requested_unit: normalizeUnit(item.requested_unit),
+                    estimated_price: 0,
+                    estimated_total: 0,
+                    actual_price: actualPrice,
+                    actual_total: actualTotal,
+                    item_note: sanitizeText(item.item_note || "Agregado post pedido", 255),
+                    was_missing: false,
+                })
+                .select("id")
+        );
+    }
+
 
     await recalculateOrderTotals(orderId, {
         status,
@@ -1989,9 +2014,50 @@ async function submitAdminOrderUpdate(form) {
     }
 
     const status = sanitizeText(formData.get("status"), 40) || "pendiente";
-    await updateOrderActuals(orderId, status, formData.get("admin_note"), itemUpdates);
+    const extraItems = collectAdminOrderExtraItems(form, formData);
+    await updateOrderActuals(orderId, status, formData.get("admin_note"), itemUpdates, extraItems);
     state.flash = { tone: "notice", message: "Pedido actualizado." };
     await renderCurrentRoute();
+}
+
+
+function collectAdminOrderExtraItems(form, formData = new FormData(form)) {
+    return Array.from(form.querySelectorAll("[data-extra-item-row]"))
+        .map((row) => {
+            const index = row.dataset.extraIndex;
+            const productName = sanitizeText(formData.get(`extra_name_${index}`), 120);
+            const quantity = normalizeQuantity(formData.get(`extra_qty_${index}`));
+            const actualPrice = parseAdminMoneyValue(formData.get(`extra_price_${index}`));
+            const itemNote = sanitizeText(formData.get(`extra_note_${index}`), 255);
+            const requestedUnit = normalizeUnit(formData.get(`extra_unit_${index}`));
+            const hasAnyValue = Boolean(productName || quantity || actualPrice !== null || itemNote);
+
+            if (!hasAnyValue) {
+                return null;
+            }
+            if (!productName || quantity <= 0 || actualPrice === null) {
+                throw new Error("Completa nombre, cantidad y valor unitario real para cada producto post pedido.");
+            }
+
+            return {
+                product_name: productName,
+                quantity,
+                requested_unit: requestedUnit,
+                actual_price: actualPrice,
+                item_note: itemNote,
+            };
+        })
+        .filter(Boolean);
+}
+
+function parseAdminMoneyValue(value) {
+    const raw = String(value ?? "").trim();
+    if (!raw) {
+        return null;
+    }
+    const normalized = raw.replace(/\./g, "").replace(",", ".");
+    const amount = Math.round(Number(normalized));
+    return Number.isFinite(amount) && amount >= 0 ? amount : null;
 }
 
 async function printCurrentOrder(orderId, isAdmin) {
@@ -3498,6 +3564,15 @@ function renderAdminOrderDetailPage(order) {
                     ${renderAdminOrderItemEditRows(order.items)}
                 </tbody>
             </table>
+            <section class="admin-extra-items">
+                <div>
+                    <h2>Agregar post pedido</h2>
+                    <p class="muted">Usa estas líneas para productos que la clienta pidió después de enviar la solicitud. Se guardan al ajustar el pedido y entran en la boleta.</p>
+                </div>
+                <div class="admin-extra-items-grid">
+                    ${renderAdminExtraItemRows()}
+                </div>
+            </section>
             <button class="button primary" type="submit">Guardar ajuste real</button>
         </form>
     `;
@@ -3550,6 +3625,32 @@ function renderAdminOrderItemEditRows(items = []) {
             </tr>
         `;
     }).join("");
+}
+
+
+function renderAdminExtraItemRows(count = 3) {
+    return Array.from({ length: count }, (_, index) => `
+        <div class="admin-extra-item-row" data-extra-item-row data-extra-index="${index}">
+            <label class="extra-name">Producto post pedido
+                <input type="text" name="extra_name_${index}" placeholder="Ej. Queque casero">
+            </label>
+            <label>Cantidad
+                <input type="number" name="extra_qty_${index}" min="0" step="0.1" placeholder="1">
+            </label>
+            <label>Unidad
+                <select name="extra_unit_${index}">
+                    <option value="kg">Kg</option>
+                    <option value="unidad">Unidad</option>
+                </select>
+            </label>
+            <label>Valor unitario real
+                <input type="number" name="extra_price_${index}" min="0" step="1" placeholder="0">
+            </label>
+            <label class="extra-note">Nota
+                <input type="text" name="extra_note_${index}" placeholder="Opcional">
+            </label>
+        </div>
+    `).join("");
 }
 
 function renderAdminProductsPage(products) {
@@ -3982,7 +4083,7 @@ function renderSetupPanel(extraMessage = "") {
             ${extraMessage ? `<div class="error-box"><p>${e(extraMessage)}</p></div>` : ""}
             <div class="list-grid">
                 <p>1. Completa <code>docs/static/config.js</code> con tu <code>SUPABASE_ANON_KEY</code>.</p>
-                <p>2. Ejecuta <code>supabase/sql/009_github_pages_auth.sql</code>, <code>supabase/sql/011_admin_first_login_setup.sql</code>, <code>supabase/sql/012_catalog_units_other_request.sql</code>, <code>supabase/sql/013_client_registration_repair.sql</code>, <code>supabase/sql/014_product_classification_presentation.sql</code>, <code>supabase/sql/015_product_images_and_order_edit.sql</code>, <code>supabase/sql/016_admin_email_allowlist.sql</code>, <code>supabase/sql/017_admin_manual_clients.sql</code>, <code>supabase/sql/018_add_seafood_category.sql</code>, <code>supabase/sql/019_product_image_upload_policy.sql</code> y <code>supabase/sql/020_client_password_reset_flow.sql</code> en el SQL Editor.</p>
+                <p>2. Ejecuta <code>supabase/sql/009_github_pages_auth.sql</code>, <code>supabase/sql/011_admin_first_login_setup.sql</code>, <code>supabase/sql/012_catalog_units_other_request.sql</code>, <code>supabase/sql/013_client_registration_repair.sql</code>, <code>supabase/sql/014_product_classification_presentation.sql</code>, <code>supabase/sql/015_product_images_and_order_edit.sql</code>, <code>supabase/sql/016_admin_email_allowlist.sql</code>, <code>supabase/sql/017_admin_manual_clients.sql</code>, <code>supabase/sql/018_add_seafood_category.sql</code>, <code>supabase/sql/019_product_image_upload_policy.sql</code>, <code>supabase/sql/020_client_password_reset_flow.sql</code> y <code>supabase/sql/021_admin_extra_order_items.sql</code> en el SQL Editor.</p>
                 <p>3. Despliega las Edge Functions <code>admin-reset-client-password</code> y <code>admin-create-client-order</code> para que administración pueda resetear claves y crear pedidos manuales.</p>
                 <p>4. Crea las administradoras en Supabase Auth con la clave temporal acordada.</p>
                 <p>5. Publica la carpeta <code>docs/</code> desde GitHub Pages.</p>
@@ -4001,7 +4102,7 @@ function renderErrorView(error) {
                 <p>${e(friendlyError(error))}</p>
             </div>
             <div class="list-grid">
-                <p>Archivos clave: <code>supabase/sql/009_github_pages_auth.sql</code>, <code>supabase/sql/011_admin_first_login_setup.sql</code>, <code>supabase/sql/012_catalog_units_other_request.sql</code>, <code>supabase/sql/013_client_registration_repair.sql</code>, <code>supabase/sql/014_product_classification_presentation.sql</code>, <code>supabase/sql/015_product_images_and_order_edit.sql</code>, <code>supabase/sql/016_admin_email_allowlist.sql</code>, <code>supabase/sql/017_admin_manual_clients.sql</code>, <code>supabase/sql/018_add_seafood_category.sql</code>, <code>supabase/sql/019_product_image_upload_policy.sql</code> y <code>supabase/sql/020_client_password_reset_flow.sql</code></p>
+                <p>Archivos clave: <code>supabase/sql/009_github_pages_auth.sql</code>, <code>supabase/sql/011_admin_first_login_setup.sql</code>, <code>supabase/sql/012_catalog_units_other_request.sql</code>, <code>supabase/sql/013_client_registration_repair.sql</code>, <code>supabase/sql/014_product_classification_presentation.sql</code>, <code>supabase/sql/015_product_images_and_order_edit.sql</code>, <code>supabase/sql/016_admin_email_allowlist.sql</code>, <code>supabase/sql/017_admin_manual_clients.sql</code>, <code>supabase/sql/018_add_seafood_category.sql</code>, <code>supabase/sql/019_product_image_upload_policy.sql</code>, <code>supabase/sql/020_client_password_reset_flow.sql</code> y <code>supabase/sql/021_admin_extra_order_items.sql</code></p>
                 <p>Funciones Edge: <code>supabase/functions/admin-reset-client-password</code> y <code>supabase/functions/admin-create-client-order</code> desplegadas en Supabase.</p>
                 <p>Config pública: <code>docs/static/config.js</code></p>
                 <p>Publicación: GitHub Pages apuntando a la carpeta <code>docs/</code></p>
@@ -5587,7 +5688,7 @@ function normalizeOrderItem(row) {
     return {
         id: Number(row.id),
         order_id: Number(row.order_id),
-        product_id: Number(row.product_id),
+        product_id: row.product_id === null || row.product_id === undefined ? null : Number(row.product_id),
         product_name: String(row.product_name || ""),
         quantity: Number(row.quantity || 0),
         requested_unit: normalizeUnit(row.requested_unit),
@@ -5763,6 +5864,10 @@ async function fetchSingleRow(query) {
 
 function friendlyError(error) {
     const raw = typeof error === "string" ? error : error?.message || "Ocurrió un problema inesperado.";
+    if (/product_id.*not null|order_items_admin_insert_manual|violates row-level security.*order_items|permission denied.*order_items/i.test(raw)) {
+        return "Falta ejecutar supabase/sql/021_admin_extra_order_items.sql en Supabase para agregar productos post pedido desde el ajuste real.";
+    }
+
     if (/clients/i.test(raw) && /must_reset_password|password_reset_at/i.test(raw)) {
         return "Falta ejecutar supabase/sql/020_client_password_reset_flow.sql en Supabase para activar el reseteo de claves de clientas.";
     }
