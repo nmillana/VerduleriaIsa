@@ -524,6 +524,23 @@ async function resolveRoute(route) {
         };
     }
 
+    if (/^\/admin\/clientes\/\d+\/pedido$/.test(route.path)) {
+        const redirect = requireRole('admin', '/admin/login', 'Debes ingresar como administradora.');
+        if (redirect) {
+            return redirect;
+        }
+        const clientId = Number(route.path.split('/')[3]);
+        const client = await fetchClientById(clientId);
+        if (!client) {
+            return { title: 'No encontrado', content: renderNotFound('No encontré esa clienta.') };
+        }
+        const products = await fetchProducts();
+        return {
+            title: `Pedido manual | ${client.name}`,
+            content: renderAdminClientOrderPage(client, products),
+        };
+    }
+
     if (route.path === "/admin/cobros-mensuales") {
         const redirect = requireRole("admin", "/admin/login", "Debes ingresar como administradora.");
         if (redirect) {
@@ -879,6 +896,11 @@ async function fetchClientsByIds(clientIds) {
     }));
 }
 
+async function fetchClientById(clientId) {
+    const clients = await fetchClientsByIds([clientId]);
+    return clients.get(Number(clientId)) || null;
+}
+
 async function fetchOrderItemsByOrderIds(orderIds) {
     const uniqueIds = [...new Set(orderIds.map(Number).filter(Boolean))];
     if (!uniqueIds.length) {
@@ -928,6 +950,44 @@ async function createOrder(selections, sourceOrderId, clientNote, otherRequest) 
         throw new Error("Supabase no devolvió el número del pedido creado.");
     }
     return orderId;
+}
+
+async function createManualOrderForClient(clientId, selections, clientNote, otherRequest) {
+    if (state.role !== 'admin' || !canShowAdminAccess()) {
+        throw new Error('Debes ingresar como administradora para crear pedidos manuales.');
+    }
+    if (!clientId) {
+        throw new Error('No pude identificar la clienta.');
+    }
+    if (!state.session?.access_token) {
+        throw new Error('Debes tener una sesión administradora activa.');
+    }
+
+    const items = buildSecureOrderItems(selections);
+    const cleanOtherRequest = sanitizeText(otherRequest, MAX_OTHER_REQUEST_LENGTH);
+    if (!items.length && !cleanOtherRequest) {
+        throw new Error('Selecciona productos o completa el campo Otro.');
+    }
+
+    const { data, error } = await withSupabaseTimeout(
+        state.client.functions.invoke('admin-create-client-order', {
+            body: {
+                client_id: clientId,
+                items,
+                client_note: sanitizeText(clientNote, MAX_CLIENT_NOTE_LENGTH) || null,
+                other_request: cleanOtherRequest || null,
+            },
+        }),
+        'Supabase no respondió al crear el pedido manual.'
+    );
+    if (error) {
+        const detail = await functionErrorMessage(error);
+        throw new Error(detail || error.message);
+    }
+    if (!data?.ok || !data?.order_id) {
+        throw new Error(data?.error || 'No pude crear el pedido manual.');
+    }
+    return Number(data.order_id);
 }
 
 async function replacePendingOrder(orderId, selections, clientNote, otherRequest) {
@@ -1289,6 +1349,9 @@ async function handleSubmit(event) {
                 break;
             case "admin-client-create":
                 await submitAdminClientCreate(form);
+                break;
+            case "admin-client-order-create":
+                await submitAdminClientOrder(form);
                 break;
             case "admin-product-create":
             case "admin-product-update":
@@ -1752,8 +1815,22 @@ async function submitAdminClientCreate(form) {
         billing_type: formData.get('billing_type'),
     });
     form.reset();
-    state.flash = { tone: 'notice', message: 'Clienta ' + client.name + ' creada manualmente.' };
-    await renderCurrentRoute();
+    state.flash = { tone: 'notice', message: `Clienta ${client.name} creada manualmente. Ahora puedes registrar su pedido.` };
+    navigate(`/admin/clientes/${client.id}/pedido`, true);
+}
+
+async function submitAdminClientOrder(form) {
+    const formData = new FormData(form);
+    const clientId = Number(formData.get('client_id') || 0);
+    const selections = collectOrderSelections(form);
+    const orderId = await createManualOrderForClient(
+        clientId,
+        selections,
+        formData.get('client_note'),
+        formData.get('other_request')
+    );
+    state.flash = { tone: 'notice', message: `Pedido #${orderId} creado para la clienta.` };
+    navigate(`/admin/pedido/${orderId}`, true);
 }
 
 async function resetClientPassword(clientId, clientName, clientEmail) {
@@ -2823,7 +2900,7 @@ function renderClientProductCard(product, selection = {}, options = {}) {
 function renderClientOrderSubmitPanel(options = {}) {
     const editOrderId = Number(options.editOrderId || 0);
     const panelClass = ["panel", "cart-submit-panel", options.className || ""].filter(Boolean).join(" ");
-    const primaryLabel = editOrderId ? "Actualizar solicitud" : "Enviar pedido";
+    const primaryLabel = options.primaryLabel || (editOrderId ? "Actualizar solicitud" : "Enviar pedido");
     const statusText = options.statusText || "Revisa el detalle antes de enviar tu solicitud.";
     const secondaryAction = options.includeCartButton
         ? `<button class="button ghost" type="button" data-action="open-cart-review">Revisar carrito</button>`
@@ -3611,12 +3688,73 @@ function renderAdminClientsPage(clients) {
                             <td>${e(client.billing_type || 'semanal')}</td>
                             <td>${client.auth_user_id ? 'App' : 'Manual'}</td>
                             <td>${client.auth_user_id ? (client.must_reset_password ? `<span class='status-pill' data-status='pendiente'>Debe cambiar</span>` : `<span class='status-pill' data-status='pagado'>Activa</span>`) : `<span class='muted'>Sin acceso</span>`}</td>
-                            <td>${client.email ? `<button class="button ghost table-action-button" type="button" data-action="reset-client-password" data-client-id="${client.id}" data-client-name="${e(client.name)}" data-client-email="${e(client.email)}">Resetear clave</button>` : `<span class="muted">Sin correo</span>`}</td>
+                            <td>
+                                <div class='table-actions admin-client-actions'>
+                                    <a class='button secondary table-action-button' href='#/admin/clientes/${client.id}/pedido'>Pedido</a>
+                                    ${client.email ? `<button class='button ghost table-action-button' type='button' title='Resetear clave' aria-label='Resetear clave de ${e(client.name)}' data-action='reset-client-password' data-client-id='${client.id}' data-client-name='${e(client.name)}' data-client-email='${e(client.email)}'>Resetear</button>` : `<span class='muted'>Sin correo</span>`}
+                                </div>
+                            </td>
                         </tr>
-                    `).join(String()) : `<tr><td colspan='9'>Aún no hay clientas registradas.</td></tr>`}
+                    `).join('') : `<tr><td colspan='9'>Aún no hay clientas registradas.</td></tr>`}
                 </tbody>
             </table>
         </section>
+    `;
+}
+
+function renderAdminClientOrderPage(client, products) {
+    const groupedProducts = groupProducts(products);
+    const activeCategories = CATEGORY_CHOICES.filter(([category]) => (groupedProducts.get(category) || []).length > 0);
+    const categoryButtons = activeCategories.map(([category, label]) => `
+        <button class='category-chip' type='button' data-action='focus-category' data-target='admin-cat-${e(productImageSlug(category))}' data-category-nav='${e(category)}'>${e(label)}</button>
+    `).join('');
+    const groupsMarkup = activeCategories.map(([category, label]) => {
+        const items = groupedProducts.get(category) || [];
+        if (!items.length) {
+            return '';
+        }
+        return `
+            <div class='panel product-group catalog-product-group' id='admin-cat-${e(productImageSlug(category))}' data-product-group data-category='${e(category)}'>
+                <h2>${e(label)}</h2>
+                <div class='product-table catalog-product-grid'>
+                    ${items.map((product) => renderClientProductCard(product, {}, { category, variant: 'catalog' })).join('')}
+                </div>
+            </div>
+        `;
+    }).join('');
+
+    return `
+        <section class='section-head admin-client-order-head'>
+            <div>
+                <p class='eyebrow'>Pedido manual</p>
+                <h1>${e(client.name)}</h1>
+                <p class='muted'>${e(client.phone || 'Sin teléfono')} | ${e(client.address || 'Sin dirección')} | ${e(client.billing_type || 'semanal')}</p>
+            </div>
+            <div class='hero-actions'>
+                <a class='button ghost' href='#/admin/clientes'>Volver a clientas</a>
+            </div>
+        </section>
+
+        <form class='catalog-app catalog-screen admin-client-order-page mobile-shop-order' data-form='admin-client-order-create' data-order-form data-delivery-fee='${DELIVERY_FEE}'>
+            <input type='hidden' name='client_id' value='${client.id}'>
+            <section class='catalog-toolbar shop-catalog-toolbar'>
+                <div class='shop-searchbar catalog-search'>
+                    <span class='shop-search-icon' aria-hidden='true'></span>
+                    <input type='search' data-product-search placeholder='Buscar productos...' aria-label='Buscar producto'>
+                </div>
+            </section>
+            <nav class='category-tabs catalog-category-tabs shop-catalog-tabs admin-client-order-tabs' aria-label='Categorías del catálogo'>
+                ${categoryButtons}
+            </nav>
+            <p class='empty-search' data-product-search-empty hidden>No encontré productos con ese nombre.</p>
+            ${groupsMarkup || `<section class='panel'><p class='muted'>No hay productos activos para crear el pedido.</p></section>`}
+            ${renderClientNotesDetails('', '')}
+            ${renderClientOrderSubmitPanel({
+                primaryLabel: 'Guardar pedido manual',
+                statusText: 'El pedido quedará pendiente para ajuste, boleta y seguimiento.',
+                className: 'admin-manual-submit-panel',
+            })}
+        </form>
     `;
 }
 
@@ -3845,7 +3983,7 @@ function renderSetupPanel(extraMessage = "") {
             <div class="list-grid">
                 <p>1. Completa <code>docs/static/config.js</code> con tu <code>SUPABASE_ANON_KEY</code>.</p>
                 <p>2. Ejecuta <code>supabase/sql/009_github_pages_auth.sql</code>, <code>supabase/sql/011_admin_first_login_setup.sql</code>, <code>supabase/sql/012_catalog_units_other_request.sql</code>, <code>supabase/sql/013_client_registration_repair.sql</code>, <code>supabase/sql/014_product_classification_presentation.sql</code>, <code>supabase/sql/015_product_images_and_order_edit.sql</code>, <code>supabase/sql/016_admin_email_allowlist.sql</code>, <code>supabase/sql/017_admin_manual_clients.sql</code>, <code>supabase/sql/018_add_seafood_category.sql</code>, <code>supabase/sql/019_product_image_upload_policy.sql</code> y <code>supabase/sql/020_client_password_reset_flow.sql</code> en el SQL Editor.</p>
-                <p>3. Despliega la Edge Function <code>admin-reset-client-password</code> para que administración pueda resetear claves de clientas.</p>
+                <p>3. Despliega las Edge Functions <code>admin-reset-client-password</code> y <code>admin-create-client-order</code> para que administración pueda resetear claves y crear pedidos manuales.</p>
                 <p>4. Crea las administradoras en Supabase Auth con la clave temporal acordada.</p>
                 <p>5. Publica la carpeta <code>docs/</code> desde GitHub Pages.</p>
             </div>
@@ -3864,7 +4002,7 @@ function renderErrorView(error) {
             </div>
             <div class="list-grid">
                 <p>Archivos clave: <code>supabase/sql/009_github_pages_auth.sql</code>, <code>supabase/sql/011_admin_first_login_setup.sql</code>, <code>supabase/sql/012_catalog_units_other_request.sql</code>, <code>supabase/sql/013_client_registration_repair.sql</code>, <code>supabase/sql/014_product_classification_presentation.sql</code>, <code>supabase/sql/015_product_images_and_order_edit.sql</code>, <code>supabase/sql/016_admin_email_allowlist.sql</code>, <code>supabase/sql/017_admin_manual_clients.sql</code>, <code>supabase/sql/018_add_seafood_category.sql</code>, <code>supabase/sql/019_product_image_upload_policy.sql</code> y <code>supabase/sql/020_client_password_reset_flow.sql</code></p>
-                <p>Función Edge: <code>supabase/functions/admin-reset-client-password</code> desplegada en Supabase.</p>
+                <p>Funciones Edge: <code>supabase/functions/admin-reset-client-password</code> y <code>supabase/functions/admin-create-client-order</code> desplegadas en Supabase.</p>
                 <p>Config pública: <code>docs/static/config.js</code></p>
                 <p>Publicación: GitHub Pages apuntando a la carpeta <code>docs/</code></p>
             </div>
@@ -5610,8 +5748,8 @@ function withSupabaseTimeout(promise, message, timeoutMs = SUPABASE_TIMEOUT_MS) 
     return Promise.race([promise, timeout]).finally(() => window.clearTimeout(timeoutId));
 }
 
-async function runQuery(query) {
-    const { data, error } = await query;
+async function runQuery(query, message = 'Supabase no respondió. Revisa la conexión e intenta nuevamente.') {
+    const { data, error } = await withSupabaseTimeout(query, message);
     if (error) {
         throw error;
     }
@@ -5628,8 +5766,8 @@ function friendlyError(error) {
     if (/clients/i.test(raw) && /must_reset_password|password_reset_at/i.test(raw)) {
         return "Falta ejecutar supabase/sql/020_client_password_reset_flow.sql en Supabase para activar el reseteo de claves de clientas.";
     }
-    if (/admin-reset-client-password|FunctionsHttpError|Edge Function|non-2xx|function.*not found/i.test(raw)) {
-        return "Falta desplegar la Edge Function admin-reset-client-password en Supabase, o la función respondió con error.";
+    if (/admin-create-client-order|admin-reset-client-password|FunctionsHttpError|Edge Function|non-2xx|function.*not found/i.test(raw)) {
+        return "Falta desplegar la Edge Function administradora en Supabase, o la función respondió con error.";
     }
     if (/must_reset_password|password_reset_at/i.test(raw)) {
         return "Falta ejecutar supabase/sql/011_admin_first_login_setup.sql en Supabase para activar el primer ingreso administrador.";

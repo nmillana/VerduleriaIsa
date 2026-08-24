@@ -7263,3 +7263,67 @@ nav.mobile-bottom-nav.client-top-nav.has-admin {
         font-size: 0.54rem;
     }
 }
+
+
+/* Admin client actions and manual order form 2026-08-24 */
+.admin-client-actions {
+    display: inline-grid;
+    grid-template-columns: repeat(2, max-content);
+    align-items: center;
+    gap: 0.34rem;
+    white-space: nowrap;
+}
+
+.table-action-button,
+.data-table .table-action-button,
+.admin-client-actions .table-action-button {
+    min-height: 32px;
+    height: 32px;
+    min-width: 0;
+    width: auto;
+    padding: 0.3rem 0.58rem;
+    border-radius: 999px;
+    font-size: 0.78rem;
+    line-height: 1;
+    white-space: nowrap;
+    box-shadow: none;
+}
+
+.admin-client-order-page {
+    width: min(100%, 980px);
+}
+
+.admin-client-order-page .catalog-product-grid {
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+}
+
+.admin-client-order-page .product-row.product-card-catalog {
+    min-height: 214px;
+}
+
+.admin-manual-submit-panel {
+    position: sticky;
+    bottom: 0.75rem;
+    z-index: 18;
+}
+
+@media (max-width: 760px) {
+    .admin-client-actions {
+        grid-template-columns: repeat(2, max-content);
+    }
+
+    .admin-client-actions .table-action-button {
+        min-height: 30px;
+        height: 30px;
+        padding: 0.28rem 0.5rem;
+        font-size: 0.72rem;
+    }
+
+    .admin-client-order-page .catalog-product-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .admin-client-order-page .product-row.product-card-catalog {
+        min-height: 204px;
+    }
+}
