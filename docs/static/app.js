@@ -226,7 +226,10 @@ function bindDomEvents() {
 
 async function handleAuthChange(event) {
     try {
-        await syncIdentity(event);
+        const recoveryOptions = event === "PASSWORD_RECOVERY"
+            ? { preferredRole: "client", strictRole: "client" }
+            : {};
+        await syncIdentity(event, recoveryOptions);
     } catch (error) {
         console.error(error);
         state.flash = { tone: "error", message: friendlyError(error) };
@@ -236,6 +239,13 @@ async function handleAuthChange(event) {
         writePreferredRole("");
         state.flash = { tone: "notice", message: "Sesion cerrada." };
         navigate("/", true);
+        return;
+    }
+
+    if (event === "PASSWORD_RECOVERY") {
+        writePreferredRole("client");
+        state.flash = { tone: "notice", message: "Enlace validado. Ahora crea una nueva contraseña." };
+        navigate("/cliente/recuperar-clave", true);
         return;
     }
 
@@ -312,6 +322,12 @@ async function resolveRoute(route) {
         return { title: "Ingreso clienta", content: renderClientLoginPage() };
     }
 
+    if (route.path === "/cliente/recuperar-clave") {
+        if (state.role === "client") {
+            return { title: "Nueva clave", content: renderClientPasswordResetPage(state.profile, { mode: "recovery" }) };
+        }
+        return { title: "Recuperar clave", content: renderClientPasswordRecoveryPage() };
+    }
     if (route.path === "/admin/login") {
         if (state.role === "admin") {
             const target = state.profile?.must_reset_password ? "/admin/cambiar-clave" : "/admin/dashboard";
@@ -1253,6 +1269,9 @@ async function handleSubmit(event) {
             case "client-login":
                 await submitClientLogin(form);
                 break;
+            case "client-password-recovery":
+                await submitClientPasswordRecovery(form);
+                break;
             case "admin-login":
                 await submitAdminLogin(form);
                 break;
@@ -1557,6 +1576,30 @@ async function submitClientLogin(form) {
     navigate("/cliente/pedido/nuevo", true);
 }
 
+async function submitClientPasswordRecovery(form) {
+    const formData = new FormData(form);
+    const email = normalizeEmail(formData.get("email"));
+
+    if (!email) {
+        throw new Error("Escribe tu correo para enviarte el enlace seguro.");
+    }
+
+    setInlineStatus(form, "Enviando enlace seguro...", "notice");
+    const redirectTo = `${appBaseUrl()}#/cliente/recuperar-clave`;
+    const { error } = await withSupabaseTimeout(
+        state.client.auth.resetPasswordForEmail(email, { redirectTo }),
+        "Supabase no respondió al enviar el enlace de recuperación. Revisa la conexión e intenta nuevamente."
+    );
+    if (error) {
+        throw error;
+    }
+
+    state.flash = {
+        tone: "notice",
+        message: "Te enviamos un enlace seguro para crear una nueva contraseña. Si no llega, revisa spam o pide a administración resetear tu clave temporal.",
+    };
+    navigate("/login-cliente", true);
+}
 async function submitAdminLogin(form) {
     const formData = new FormData(form);
     const email = normalizeEmail(formData.get("email"));
@@ -2280,6 +2323,28 @@ function renderClientLoginPage() {
                 <button class="button primary" type="submit" data-busy-text="Entrando...">Entrar</button>
             </form>
             <p class="muted">¿Aún no estás registrada? <a href="#/registro">Crear registro</a></p>
+            <p class="muted">¿Olvidaste tu contraseña? <a href="#/cliente/recuperar-clave">Recuperar acceso</a></p>
+        </section>
+    `;
+}
+
+function renderClientPasswordRecoveryPage() {
+    return `
+        <section class="form-panel narrow auth-panel">
+            <div class="access-card__logo-wrap compact">
+                <img class="access-card__logo" src="./static/logo-verduleria-isa.png" alt="${e(APP_NAME)}">
+            </div>
+            <p class="eyebrow">Recuperar acceso</p>
+            <h1>Olvidé mi contraseña</h1>
+            <p class="muted">Escribe tu correo y te enviaremos un enlace seguro para crear una nueva contraseña en esta app.</p>
+            <form class="stacked-form" data-form="client-password-recovery">
+                <label>Correo
+                    <input type="email" name="email" autocomplete="email" required>
+                </label>
+                <p class="field-note" data-inline-status>El enlace debe abrir Verduleria Isa, no localhost.</p>
+                <button class="button primary" type="submit" data-busy-text="Enviando...">Enviar enlace seguro</button>
+            </form>
+            <p class="muted"><a href="#/login-cliente">Volver al ingreso</a></p>
         </section>
     `;
 }
@@ -2322,15 +2387,21 @@ function renderAdminPasswordResetPage(admin) {
     `;
 }
 
-function renderClientPasswordResetPage(client) {
+function renderClientPasswordResetPage(client, options = {}) {
+    const isRecovery = options.mode === "recovery";
+    const email = client?.email || state.session?.user?.email || "";
+    const eyebrow = isRecovery ? "Recuperar acceso" : "Clave temporal";
+    const intro = isRecovery
+        ? `${e(email)} abrió el enlace seguro. Define una nueva contraseña para volver a ingresar.`
+        : `${e(email)} ingresó con una clave temporal. Define una nueva para proteger tu cuenta.`;
     return `
         <section class="form-panel narrow auth-panel">
             <div class="access-card__logo-wrap compact">
                 <img class="access-card__logo" src="./static/logo-verduleria-isa.png" alt="${e(APP_NAME)}">
             </div>
-            <p class="eyebrow">Clave temporal</p>
+            <p class="eyebrow">${eyebrow}</p>
             <h1>Crea tu nueva contraseña</h1>
-            <p class="muted">${e(client.email)} ingresó con una clave temporal. Define una nueva para proteger tu cuenta.</p>
+            <p class="muted">${intro}</p>
             <form class="stacked-form" data-form="client-password-reset">
                 <label>Nueva contraseña
                     <input type="password" name="new_password" minlength="8" autocomplete="new-password" required>
@@ -3540,7 +3611,7 @@ function renderAdminClientsPage(clients) {
                             <td>${e(client.billing_type || 'semanal')}</td>
                             <td>${client.auth_user_id ? 'App' : 'Manual'}</td>
                             <td>${client.auth_user_id ? (client.must_reset_password ? `<span class='status-pill' data-status='pendiente'>Debe cambiar</span>` : `<span class='status-pill' data-status='pagado'>Activa</span>`) : `<span class='muted'>Sin acceso</span>`}</td>
-                            <td>${client.auth_user_id ? `<button class='button ghost table-action-button' type='button' data-action='reset-client-password' data-client-id='${client.id}' data-client-name='${e(client.name)}' data-client-email='${e(client.email)}'>Resetear clave</button>` : `<span class='muted'>Crear acceso desde registro</span>`}</td>
+                            <td>${client.email ? `<button class="button ghost table-action-button" type="button" data-action="reset-client-password" data-client-id="${client.id}" data-client-name="${e(client.name)}" data-client-email="${e(client.email)}">Resetear clave</button>` : `<span class="muted">Sin correo</span>`}</td>
                         </tr>
                     `).join(String()) : `<tr><td colspan='9'>Aún no hay clientas registradas.</td></tr>`}
                 </tbody>

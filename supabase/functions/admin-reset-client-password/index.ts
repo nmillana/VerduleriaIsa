@@ -95,15 +95,23 @@ Deno.serve(async (req) => {
       }
     }
 
+    let createdAuthUser = false;
     if (!authUserId) {
-      return json({ error: "Esta clienta no tiene usuario Auth enlazado. Debe crear su acceso con el mismo correo antes de resetear clave." }, 400);
-    }
-
-    const { error: updateUserError } = await adminClient.auth.admin.updateUserById(authUserId, {
-      password: temporaryPassword,
-    });
-    if (updateUserError) {
-      throw updateUserError;
+      authUserId = await createAndLinkClientAuthUser(adminClient, client, temporaryPassword);
+      createdAuthUser = true;
+    } else {
+      const { error: updateUserError } = await adminClient.auth.admin.updateUserById(authUserId, {
+        password: temporaryPassword,
+        email_confirm: true,
+      });
+      if (updateUserError) {
+        if (isMissingAuthUserError(updateUserError)) {
+          authUserId = await createAndLinkClientAuthUser(adminClient, client, temporaryPassword);
+          createdAuthUser = true;
+        } else {
+          throw updateUserError;
+        }
+      }
     }
 
     const { error: flagError } = await adminClient
@@ -120,6 +128,7 @@ Deno.serve(async (req) => {
       email: client.email,
       temporary_password: temporaryPassword,
       must_reset_password: true,
+      created_auth_user: createdAuthUser,
     });
   } catch (error) {
     console.error(error);
@@ -142,6 +151,43 @@ function sanitizePassword(value: unknown) {
   return String(value || "").trim().slice(0, 128);
 }
 
+async function createAndLinkClientAuthUser(adminClient: any, client: any, temporaryPassword: string) {
+  const email = normalizeEmail(client.email);
+  if (!email) {
+    throw new Error("Esta clienta no tiene correo para crear acceso Auth.");
+  }
+
+  const { data, error } = await adminClient.auth.admin.createUser({
+    email,
+    password: temporaryPassword,
+    email_confirm: true,
+    user_metadata: {
+      role: "client",
+      name: client.name || "",
+    },
+  });
+  if (error) {
+    throw error;
+  }
+  const authUserId = data?.user?.id || "";
+  if (!authUserId) {
+    throw new Error("Supabase no devolvio el usuario Auth creado.");
+  }
+
+  const { error: linkError } = await adminClient
+    .from("clients")
+    .update({ auth_user_id: authUserId })
+    .eq("id", client.id);
+  if (linkError) {
+    throw linkError;
+  }
+  return authUserId;
+}
+
+function isMissingAuthUserError(error: unknown) {
+  const raw = error instanceof Error ? error.message : String(error || "");
+  return /not found|user.*not.*exist|no user|404/i.test(raw);
+}
 async function findAuthUserIdByEmail(adminClient: ReturnType<typeof createClient>, email: string) {
   const target = normalizeEmail(email);
   for (let page = 1; page <= 20; page += 1) {
