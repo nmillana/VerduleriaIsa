@@ -3468,11 +3468,50 @@ function renderAdminDashboardPage(dashboard, recentOrders, month) {
 }
 
 function renderAdminOrdersPage(orders, month, status) {
+    const weeks = buildAdminOrderWeeks(orders);
+    const weekCards = weeks.length ? weeks.map((week, index) => `
+        <details class="week-card admin-orders-week" ${index === 0 ? "open" : ""}>
+            <summary>
+                <div>
+                    <strong>${e(week.label)}</strong>
+                    <span class="week-status-line">
+                        ${week.order_count} pedido(s) · ${week.pending_count} pendiente(s) · ${week.purchased_count} comprado(s) · ${week.paid_count} pagado(s)
+                    </span>
+                </div>
+                <strong>${formatCurrency(week.total)}</strong>
+            </summary>
+            <div class="admin-order-week-table">
+                <table class="data-table">
+                    <thead>
+                        <tr><th>N°</th><th>Clienta</th><th>Estado</th><th>Total</th><th>Fecha</th><th></th></tr>
+                    </thead>
+                    <tbody>
+                        ${week.orders.map((order) => `
+                            <tr>
+                                <td>#${order.id}</td>
+                                <td>${e(order.client_name)}</td>
+                                <td>${e(statusLabel(order.status))}</td>
+                                <td>${formatCurrency(order.display_total)}</td>
+                                <td>${e(formatDateTime(order.created_at))}</td>
+                                <td><a href="#/admin/pedido/${order.id}">Abrir</a></td>
+                            </tr>
+                        `).join("")}
+                    </tbody>
+                </table>
+            </div>
+        </details>
+    `).join("") : `
+        <div class="admin-order-week-empty">
+            <p class="muted">No hay pedidos para este filtro.</p>
+        </div>
+    `;
+
     return `
         <section class="section-head">
             <div>
                 <p class="eyebrow">Seguimiento</p>
                 <h1>Pedidos</h1>
+                <p class="muted">Agrupados por semana para revisar y administrar cada corte con mayor claridad.</p>
             </div>
             <form class="inline-form compact-form" data-form="admin-orders-filter">
                 <input type="month" name="month" value="${e(month)}">
@@ -3486,28 +3525,12 @@ function renderAdminOrdersPage(orders, month, status) {
             </form>
         </section>
 
-        <section class="panel">
-            <table class="data-table">
-                <thead>
-                    <tr><th>N°</th><th>Clienta</th><th>Estado</th><th>Total</th><th>Fecha</th><th></th></tr>
-                </thead>
-                <tbody>
-                    ${orders.length ? orders.map((order) => `
-                        <tr>
-                            <td>#${order.id}</td>
-                            <td>${e(order.client_name)}</td>
-                            <td>${e(statusLabel(order.status))}</td>
-                            <td>${formatCurrency(order.display_total)}</td>
-                            <td>${e(formatDateTime(order.created_at))}</td>
-                            <td><a href="#/admin/pedido/${order.id}">Abrir</a></td>
-                        </tr>
-                    `).join("") : `<tr><td colspan="6">No hay pedidos para este filtro.</td></tr>`}
-                </tbody>
-            </table>
+        <section class="panel admin-orders-week-list">
+            <h2>Pedidos por semana</h2>
+            ${weekCards}
         </section>
     `;
 }
-
 function renderAdminOrderDetailPage(order) {
     return `
         <section class="section-head">
@@ -4241,6 +4264,43 @@ function buildClientDashboard(orders) {
     };
 }
 
+function buildAdminOrderWeeks(orders) {
+    const weeks = new Map();
+
+    for (const order of orders) {
+        const meta = weekMetaForDate(order.created_at);
+        if (!weeks.has(meta.key)) {
+            weeks.set(meta.key, {
+                ...meta,
+                orders: [],
+                total: 0,
+                order_count: 0,
+                pending_count: 0,
+                purchased_count: 0,
+                paid_count: 0,
+            });
+        }
+
+        const week = weeks.get(meta.key);
+        week.orders.push(order);
+        week.total += order.display_total;
+        week.order_count += 1;
+        if (order.status === "pendiente") {
+            week.pending_count += 1;
+        } else if (order.status === "pagado") {
+            week.paid_count += 1;
+        } else if (order.status === "comprado") {
+            week.purchased_count += 1;
+        }
+    }
+
+    return [...weeks.values()]
+        .map((week) => ({
+            ...week,
+            orders: week.orders.slice().sort((a, b) => new Date(b.created_at) - new Date(a.created_at) || b.id - a.id),
+        }))
+        .sort((a, b) => new Date(b.week_start) - new Date(a.week_start));
+}
 function buildAdminDashboard(orders) {
     const summary = {
         order_count: orders.length,
