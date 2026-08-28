@@ -430,7 +430,7 @@ async function resolveRoute(route) {
             : null;
         const baseOrder = editOrder || sourceOrder;
         const draft = baseOrder
-            ? buildOrderDraftFromOrder(baseOrder, Boolean(editOrder))
+            ? draftFromOrderOrCurrent(baseOrder, Boolean(editOrder))
             : readOrderDraft();
         return {
             title: editOrder ? "Editar pedido" : "Nuevo pedido",
@@ -1528,7 +1528,11 @@ async function updateProductQuantity(actionNode, action) {
 
     input.value = next > 0 ? formatQuantityInputValue(next) : "";
     refreshOrderSummary();
-    persistOrderDraft(form);
+    if (next <= 0) {
+        removeProductFromDraft(productId, form);
+    } else {
+        persistOrderDraft(form);
+    }
     if (next <= 0 && form.classList.contains("cart-review-page")) {
         await renderCurrentRoute();
     }
@@ -4519,8 +4523,7 @@ async function resolveOrderDraftFromRoute(route) {
         return { draft: readOrderDraft(), editOrder: null, sourceOrder: null, view: redirectView(`/cliente/pedido/${order.id}`, "Solo puedes editar pedidos pendientes.", "error") };
     }
 
-    const draft = buildOrderDraftFromOrder(order, Boolean(editId));
-    writeOrderDraft(draft);
+    const draft = draftFromOrderOrCurrent(order, Boolean(editId));
     return {
         draft,
         editOrder: editId ? order : null,
@@ -4537,6 +4540,23 @@ function buildOrderDraftFromOrder(order, isEdit) {
         source_order_id: isEdit ? null : order.id,
         edit_order_id: isEdit ? order.id : null,
     };
+}
+
+function draftFromOrderOrCurrent(order, isEdit) {
+    const currentDraft = readOrderDraft();
+    if (draftMatchesOrderContext(currentDraft, order, isEdit)) {
+        return currentDraft;
+    }
+    const draft = buildOrderDraftFromOrder(order, isEdit);
+    writeOrderDraft(draft);
+    return draft;
+}
+
+function draftMatchesOrderContext(draft, order, isEdit) {
+    const normalized = normalizeOrderDraft(draft);
+    if (!order?.id) return false;
+    if (isEdit) return normalized.edit_order_id === Number(order.id);
+    return normalized.source_order_id === Number(order.id) && !normalized.edit_order_id;
 }
 
 function readOrderDraft() {
@@ -4578,6 +4598,23 @@ function persistOrderDraft(form) {
             source_order_id: Number(formData.get("source_order_id") || 0) || null,
             edit_order_id: Number(formData.get("edit_order_id") || 0) || null,
         };
+        writeOrderDraft(draft);
+    } catch (error) {
+        // localStorage can be unavailable in strict privacy modes.
+    }
+}
+
+function removeProductFromDraft(productId, form) {
+    try {
+        const draft = readOrderDraft();
+        delete draft.selections[Number(productId)];
+        if (form) {
+            const formData = new FormData(form);
+            draft.client_note = sanitizeText(formData.get("client_note"), MAX_CLIENT_NOTE_LENGTH);
+            draft.other_request = sanitizeText(formData.get("other_request"), MAX_OTHER_REQUEST_LENGTH);
+            draft.source_order_id = Number(formData.get("source_order_id") || draft.source_order_id || 0) || null;
+            draft.edit_order_id = Number(formData.get("edit_order_id") || draft.edit_order_id || 0) || null;
+        }
         writeOrderDraft(draft);
     } catch (error) {
         // localStorage can be unavailable in strict privacy modes.
