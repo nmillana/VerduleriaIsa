@@ -7396,3 +7396,73 @@ nav.mobile-bottom-nav.client-top-nav.has-admin {
         grid-column: 1 / -1;
     }
 }
+
+
+/* Monthly billing standard shell reset 2026-09-02 */
+.route-admin-cobros-mensuales {
+    width: min(100% - 2rem, 1160px);
+    padding: 1rem 0 2rem;
+}
+
+.route-admin-cobros-mensuales > .topbar.admin-topbar-clean {
+    display: flex;
+}
+
+.route-admin-cobros-mensuales .content-shell {
+    gap: 1.25rem;
+}
+
+.monthly-standard-head {
+    align-items: flex-start;
+}
+
+.monthly-standard-head h1 {
+    margin-top: 0.1rem;
+}
+
+.monthly-standard-actions {
+    justify-content: flex-end;
+}
+
+.monthly-standard-actions .month-filter {
+    flex-wrap: nowrap;
+}
+
+.monthly-standard-actions input[type="month"] {
+    min-width: 170px;
+}
+
+.monthly-standard-guide {
+    display: grid;
+    gap: 0.35rem;
+    border-color: rgba(126, 183, 81, 0.28);
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.96), rgba(244, 251, 237, 0.9));
+}
+
+.monthly-standard-guide h2,
+.monthly-standard-guide p {
+    margin: 0;
+}
+
+.monthly-standard-note {
+    margin-top: 0.35rem !important;
+    font-weight: 600;
+}
+
+@media (max-width: 760px) {
+    .route-admin-cobros-mensuales {
+        width: min(100% - 0.6rem, 520px);
+        padding-top: 0.25rem;
+    }
+
+    .monthly-standard-actions,
+    .monthly-standard-actions .month-filter {
+        width: 100%;
+    }
+
+    .monthly-standard-actions .button,
+    .monthly-standard-actions input[type="month"] {
+        flex: 1 1 145px;
+        min-width: 0;
+    }
+}
