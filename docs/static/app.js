@@ -261,7 +261,11 @@ function onRouteChange() {
 
 async function renderCurrentRoute() {
     const route = state.route || parseHashRoute();
-    renderShell("Cargando", renderLoadingCard("Cargando vista..."));
+    if (route.path === "/" && !state.role) {
+        renderShell("Acceso", renderHomePage());
+    } else {
+        renderShell("Cargando", renderLoadingCard("Cargando vista..."));
+    }
 
     try {
         const view = await resolveRoute(route);

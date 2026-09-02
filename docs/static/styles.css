@@ -794,27 +794,6 @@ textarea {
     display: none !important;
 }
 
-#app:empty {
-    min-height: 100vh;
-    display: grid;
-    place-items: center;
-    padding: 1rem;
-}
-
-#app:empty::before {
-    content: "Cargando Verduleria Isa...";
-    display: block;
-    width: min(360px, 100%);
-    min-height: 112px;
-    padding: 1.2rem;
-    border: 1px solid var(--line);
-    border-radius: 8px;
-    background: var(--surface-strong);
-    box-shadow: var(--shadow);
-    color: var(--muted);
-    font-weight: 700;
-}
-
 button,
 .button,
 input:not([type="checkbox"]),

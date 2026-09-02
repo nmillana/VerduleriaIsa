@@ -13,14 +13,36 @@
     <link rel="manifest" href="./manifest.webmanifest">
     <link rel="icon" sizes="192x192" href="./static/icons/icon-192.png">
     <link rel="apple-touch-icon" href="./static/icons/icon-192.png">
-    <link rel="stylesheet" href="./static/styles.css?v=20260902-monthly-billing-shell">
+    <link rel="stylesheet" href="./static/styles.css?v=20260902-home-first-load">
 </head>
 <body>
-    <div id="app"></div>
+    <div id="app">
+        <div class="page-shell public-shell route-home" aria-label="Inicio Verduleria Isa">
+            <main class="content-shell">
+                <section class="landing-page app-start-page">
+                    <section class="landing-hero app-start-screen">
+                        <div class="landing-mobile-top">
+                            <span></span>
+                            <a class="landing-menu-button" href="#/login-cliente" aria-label="Ingresar"></a>
+                        </div>
+                        <img class="landing-logo" src="./static/logo-verduleria-isa.png" alt="Verduleria Isa">
+                        <p class="eyebrow">Tu feria personal</p>
+                        <h1>Frescura directo a tu casa.</h1>
+                        <p class="lead">Ingresa para armar tu pedido semanal de frutas, verduras y productos seleccionados.</p>
+                        <figure class="landing-hero__image landing-hero__image--pending" aria-hidden="true"></figure>
+                        <div class="landing-actions">
+                            <a class="button primary" href="#/login-cliente">Ingresar</a>
+                        </div>
+                        <p class="landing-proof">Productos frescos y seleccionados cada semana</p>
+                    </section>
+                </section>
+            </main>
+        </div>
+    </div>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
     <script src="./static/config.js?v=20260807-remove-cart-items"></script>
-    <script src="./static/app.js?v=20260902-monthly-billing-shell"></script>
+    <script src="./static/app.js?v=20260902-home-first-load"></script>
     <script src="./static/cart-active-fix.js?v=20260828-stale-cart-cleanup"></script>
     <script>
         if ("serviceWorker" in navigator) {
